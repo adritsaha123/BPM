@@ -34,8 +34,63 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ---- Typed endpoints (mirror backend/app/routes) ----
 
-export type Health = { status: string; ai: "live" | "mock" };
+export type WhoopMode = "live" | "mock" | "not_connected";
+export type Health = { status: string; ai: "live" | "mock"; whoop?: WhoopMode };
 export type Item = { id: number; title: string; notes: string };
+
+// ---- WHOOP (history) + live heart rate. See docs/WHOOP.md ----
+
+export type HrZone = { zone: number; min_bpm: number; max_bpm: number };
+
+export type WhoopWorkout = {
+  id: string;
+  sport: string;
+  is_run: boolean;
+  start: string;
+  end: string;
+  duration_min: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  strain: number | null;
+  distance_km: number | null;
+  pace_min_per_km: number | null;
+  zone_minutes: Record<string, number>;
+  score_state: string | null;
+};
+
+export type WhoopCycle = {
+  id: number;
+  start: string;
+  end: string | null;
+  strain: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  step_count: number | null;
+};
+
+export type WhoopSummary = {
+  mode: WhoopMode;
+  days: number;
+  max_hr: number | null;
+  resting_hr: number | null;
+  hrv_ms: number | null;
+  recovery_score: number | null;
+  zone_method: "heart_rate_reserve" | "percent_of_max";
+  hr_zones: HrZone[];
+  run_count: number;
+  avg_run_hr: number | null;
+  avg_run_pace_min_per_km: number | null;
+  steps_current_cycle: number | null;
+  recent_runs: WhoopWorkout[];
+};
+
+export type LiveHr = {
+  bpm: number | null;
+  source: string | null;
+  age_s: number | null;
+  avg_bpm: number | null;
+  recent: { bpm: number; ts: number }[];
+};
 
 export const api = {
   health: () => request<Health>("/health"),
@@ -48,4 +103,12 @@ export const api = {
   createItem: (title: string, notes = "") =>
     request<Item>("/items", { method: "POST", body: JSON.stringify({ title, notes }) }),
   deleteItem: (id: number) => request<void>(`/items/${id}`, { method: "DELETE" }),
+
+  whoopStatus: () => request<{ mode: WhoopMode; login_url: string }>("/whoop/status"),
+  whoopSummary: (days = 30) => request<WhoopSummary>(`/whoop/summary?days=${days}`),
+  whoopWorkouts: (days = 30, runsOnly = false) =>
+    request<WhoopWorkout[]>(`/whoop/workouts?days=${days}&runs_only=${runsOnly}`),
+  whoopCycles: (days = 30) => request<WhoopCycle[]>(`/whoop/cycles?days=${days}`),
+  /** Latest live bpm from the band (poll every 1-2s). bpm is null until the BLE script runs. */
+  liveHr: (windowS = 30) => request<LiveHr>(`/live/hr?window_s=${windowS}`),
 };

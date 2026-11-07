@@ -12,9 +12,19 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-5-5"
     cors_origins: str = "*"
 
+    # WHOOP Developer API (developer-dashboard.whoop.com). Blank = mock WHOOP data.
+    whoop_client_id: str = ""
+    whoop_client_secret: str = ""
+    whoop_redirect_uri: str = "http://localhost:8000/whoop/callback"
+    whoop_token_file: str = ".whoop_tokens.json"
+
     @property
     def ai_enabled(self) -> bool:
         return bool(self.anthropic_api_key.strip())
+
+    @property
+    def whoop_enabled(self) -> bool:
+        return bool(self.whoop_client_id.strip() and self.whoop_client_secret.strip())
 
 
 @lru_cache
