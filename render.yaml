@@ -7,6 +7,7 @@ services:
     name: bpm-backend
     runtime: python
     plan: free
+    region: ohio # next to the Neon database (AWS us-east-2)
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
@@ -16,7 +17,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.13"
       # Secrets: Render asks for these when you create the blueprint (sync: false = not in git).
-      - key: DATABASE_URL
+      - key: DATABASE_URL # your Neon connection string (set in Render, never here)
         sync: false
       - key: SPOTIFY_CLIENT_ID
         sync: false
