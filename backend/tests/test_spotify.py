@@ -417,3 +417,135 @@ def test_queue_retries_with_device(monkeypatch):
     monkeypatch.setattr(spotify, "_request", _fake_request(calls, devices))
     spotify.queue("spotify:track:y")
     assert calls[-1] == ("POST", "/me/player/queue", {"uri": "spotify:track:y", "device_id": "phone"})
+
+
+def test_fit_score_energy_breaks_ties_but_tempo_leads():
+    on_tempo = {"diff_bpm": 0.0}
+    # same tempo: pushing prefers the high-energy song, easing the calm one
+    assert tempo.fit_score(on_tempo, 0.85, "push") < tempo.fit_score(on_tempo, 0.4, "push")
+    assert tempo.fit_score(on_tempo, 0.4, "ease") < tempo.fit_score(on_tempo, 0.85, "ease")
+    # a calm song 8 BPM too fast doesn't beat an on-tempo song when easing off
+    assert tempo.fit_score(on_tempo, 0.7, "ease") < tempo.fit_score({"diff_bpm": 8.0}, 0.4, "ease")
+    # no intensity: tempo only
+    assert tempo.fit_score({"diff_bpm": -3.0}, None, None) == 3.0
+
+
+def test_match_with_intensity_returns_energy_and_ranks_by_fit(mock_mode):
+    r = client.get("/spotify/match", params={"target_bpm": 160, "intensity": "push"}).json()
+    assert r["intensity"] == "push"
+    tracks = r["tracks"]
+    assert all(t["energy"] is not None for t in tracks)
+    assert [t["fit_score"] for t in tracks] == sorted(t["fit_score"] for t in tracks)
+    assert tracks[0]["match"]["diff_bpm"] >= 0  # pushing never leads with a slower song
+
+
+def test_coach_direction_sets_intensity(mock_mode, default_zones):
+    client.post("/live/hr", json={"bpm": 170})
+    r = client.post("/spotify/sync", json={"zone": 3}).json()
+    assert r["intensity"] == "ease"
+
+
+def test_reccobeats_energy_is_parsed(monkeypatch):
+    body = {
+        "content": [
+            {
+                "href": "https://open.spotify.com/track/t1",
+                "tempo": 171.24,
+                "energy": 0.912,
+                "danceability": 0.5,
+            }
+        ]
+    }
+    monkeypatch.setattr(tempo.httpx, "get", lambda *a, **k: httpx.Response(200, json=body))
+    got = tempo._fetch(["t1", "t2"])
+    assert got == {"t1": {"tempo": 171.2, "energy": 0.91, "danceability": 0.5}, "t2": None}
+
+
+def test_play_one_track_while_playing_queues_and_skips(monkeypatch):
+    monkeypatch.setattr(spotify, "mode", lambda: "live")
+    monkeypatch.setattr(spotify, "current_playback", lambda: {"is_playing": True, "track": None})
+    calls = []
+    monkeypatch.setattr(
+        spotify, "_request", lambda method, path, params=None, body=None: calls.append((method, path))
+    )
+    spotify.play(uris=["spotify:track:x"])
+    assert calls == [("POST", "/me/player/queue"), ("POST", "/me/player/next")]
+
+
+def test_play_one_track_when_paused_uses_play(monkeypatch):
+    monkeypatch.setattr(spotify, "mode", lambda: "live")
+    monkeypatch.setattr(spotify, "current_playback", lambda: None)
+    calls = []
+    monkeypatch.setattr(
+        spotify, "_request", lambda method, path, params=None, body=None: calls.append((method, path))
+    )
+    spotify.play(uris=["spotify:track:x"])
+    assert calls == [("PUT", "/me/player/play")]
+
+
+def test_non_json_success_body_is_ignored(connected, monkeypatch):
+    monkeypatch.setattr(
+        spotify.httpx, "request", lambda *a, **k: httpx.Response(200, content=b"queued", request=None)
+    )
+    assert spotify._request("POST", "/me/player/queue", params={"uri": "spotify:track:x"}) is None
+
+
+# --------------------------------------------------------------------------- per-user logins (app)
+
+ALICE = "aaaaaaaa-1111-4111-8111-111111111111"
+BOB = "bbbbbbbb-2222-4222-8222-222222222222"
+
+
+def test_app_login_returns_to_app_and_saves_per_user(live_creds, monkeypatch):
+    r = client.get(
+        "/spotify/login",
+        params={"return_to": "bpm://spotify-connected"},
+        headers={"X-User-Id": ALICE},
+        follow_redirects=False,
+    )
+    state = parse_qs(urlparse(r.headers["location"]).query)["state"][0]
+    monkeypatch.setattr(
+        spotify,
+        "_token_request",
+        lambda data: {"access_token": "a", "refresh_token": "r", "expires_in": 3600},
+    )
+    back = client.get("/spotify/callback", params={"code": "c", "state": state}, follow_redirects=False)
+    assert back.headers["location"] == "bpm://spotify-connected?spotify=connected"
+    # Alice has her own login file; the shared default login is untouched
+    assert (live_creds.parent / f"tokens.{ALICE}.json").exists() and not live_creds.exists()
+    assert client.get("/spotify/status", headers={"X-User-Id": ALICE}).json()["mode"] == "live"
+    assert client.get("/spotify/status", headers={"X-User-Id": BOB}).json()["mode"] == "not_connected"
+
+
+def test_requests_use_the_callers_own_token(live_creds, monkeypatch):
+    for user, tok in ((ALICE, "alice-tok"), (BOB, "bob-tok")):
+        (live_creds.parent / f"tokens.{user}.json").write_text(
+            json.dumps({"access_token": tok, "refresh_token": "r", "expires_at": time.time() + 600})
+        )
+    seen = []
+
+    def fake_request(method, url, params=None, json=None, headers=None, timeout=None):
+        seen.append(headers["Authorization"])
+        return httpx.Response(204, request=httpx.Request(method, url))
+
+    monkeypatch.setattr(spotify.httpx, "request", fake_request)
+    client.post("/spotify/pause", headers={"X-User-Id": ALICE})
+    client.post("/spotify/pause", headers={"X-User-Id": BOB})
+    assert seen == ["Bearer alice-tok", "Bearer bob-tok"]
+
+
+def test_user_without_own_login_borrows_the_laptop_login(connected):
+    s = client.get("/spotify/status", headers={"X-User-Id": ALICE}).json()
+    assert s["mode"] == "live" and s["shared"] is True
+
+
+def test_disconnect_forgets_only_that_user(live_creds):
+    f = live_creds.parent / f"tokens.{ALICE}.json"
+    f.write_text(json.dumps({"access_token": "a", "expires_at": time.time() + 600}))
+    assert client.delete("/spotify/connection", headers={"X-User-Id": ALICE}).status_code == 204
+    assert not f.exists()
+
+
+def test_return_to_must_be_the_app(live_creds):
+    client.get("/spotify/login", params={"return_to": "https://evil.example"}, follow_redirects=False)
+    assert all(v["return_to"] is None for v in spotify._pending_states.values())

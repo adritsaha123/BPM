@@ -1,3 +1,4 @@
+import type { Intensity } from "../api";
 import { useSession } from "../store/session";
 import { musicPlayer } from "./player";
 import { spotifyOutput } from "./spotifyOutput";
@@ -19,6 +20,11 @@ export const music = {
   setBpm(bpm: number) {
     if (source() === "spotify") spotifyOutput.setBpm(bpm);
     else musicPlayer.setBpm(bpm);
+  },
+
+  /** Spotify only: favor high-energy songs (push) or calmer ones (ease). Built-in tracks ignore it. */
+  setIntensity(intensity: Intensity) {
+    if (source() === "spotify") spotifyOutput.setIntensity(intensity);
   },
 
   stop() {

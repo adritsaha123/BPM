@@ -1,0 +1,34 @@
+# Render blueprint: deploys the FastAPI backend from this repo (render.com → New → Blueprint).
+# Free plan: sleeps after ~15 min without requests; the next request wakes it (~30-60 s).
+# Logins (Spotify, WHOOP) are stored in Postgres via DATABASE_URL (e.g. a free Neon database),
+# because Render's free disk is wiped on every restart and deploy.
+services:
+  - type: web
+    name: bpm-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13"
+      # Secrets: Render asks for these when you create the blueprint (sync: false = not in git).
+      - key: DATABASE_URL
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REDIRECT_URI # https://<your service>.onrender.com/spotify/callback
+        sync: false
+      - key: WHOOP_CLIENT_ID
+        sync: false
+      - key: WHOOP_CLIENT_SECRET
+        sync: false
+      - key: WHOOP_REDIRECT_URI # https://<your service>.onrender.com/whoop/callback
+        sync: false
+      - key: ANTHROPIC_API_KEY # optional: blank = mock AI
+        sync: false

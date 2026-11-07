@@ -23,4 +23,4 @@ node_modules/
 # WHOOP OAuth tokens and exported health data — never commit
 .whoop_tokens*.json
 backend/data/
-.spotify_tokens.json
+.spotify_tokens*.json

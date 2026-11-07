@@ -39,6 +39,11 @@ The phone's controller (`mobile/src/engine/controller.ts`) still decides the tar
 - **Target changes:** if the current song is 10+ BPM off the new target, switches now (at most once every 45 s);
   otherwise the next song uses the new target.
 - **Near the end of each song:** queues the best match for the current target (Auto-DJ).
+- **Song energy follows the coaching:** heart rate below the zone → fast *and* high-energy songs;
+  above it → calmer ones; in the zone → middle energy. Energy (0-1) comes from ReccoBeats with the tempo.
+  Tempo still leads: energy only breaks near-ties, and a song that goes the wrong way (slower while
+  pushing, faster while easing off) is penalized (`tempo.fit_score`). `/spotify/match` and `/spotify/sync`
+  take `intensity=push|hold|ease` (default: the coach direction when `zone` is set).
 - If Spotify can't play (no active device, no Premium, backend down), the workout falls back to the built-in
   tracks and says why.
 

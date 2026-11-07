@@ -5,6 +5,10 @@ ReccoBeats (free, no API key): GET https://api.reccobeats.com/v1/audio-features?
 with at most 40 ids per call. Tracks ReccoBeats doesn't know are simply missing from the
 response, so their tempo is None. Results are cached in memory for the life of the process.
 
+ReccoBeats also returns each song's energy and danceability (0-1). Coach mode uses energy too:
+pushing the heart rate up picks fast *and* high-energy songs, easing off picks calmer ones
+(see fit_score).
+
 Matching treats half and double time as the same groove: a 85 BPM song "fits" a heart rate of
 170 (one beat every two heartbeats), and a 180 BPM song fits 90.
 """
@@ -23,11 +27,14 @@ RETRY_AFTER_FAILURE_S = 30
 IN_SYNC_BPM = 3  # |song - heart rate| within this = in sync
 CLOSE_BPM = 8
 
-_cache: dict[str, float | None] = {}
+FEATURES = ("tempo", "energy", "danceability")
+Features = dict[str, float | None]
+
+_cache: dict[str, Features | None] = {}
 _last_failure = 0.0
 
 
-def _fetch(ids: list[str]) -> dict[str, float | None] | None:
+def _fetch(ids: list[str]) -> dict[str, Features | None] | None:
     """One ReccoBeats call. None means the request failed (don't cache, retry later)."""
     try:
         r = httpx.get(
@@ -40,24 +47,38 @@ def _fetch(ids: list[str]) -> dict[str, float | None] | None:
         return None
     if r.status_code != 200:
         return None
-    found: dict[str, float | None] = dict.fromkeys(ids)
+    found: dict[str, Features | None] = dict.fromkeys(ids)
     for row in r.json().get("content") or []:
         spotify_id = (row.get("href") or "").rstrip("/").rsplit("/", 1)[-1]
         if spotify_id in found and row.get("tempo"):
-            found[spotify_id] = round(float(row["tempo"]), 1)
+            found[spotify_id] = {
+                "tempo": round(float(row["tempo"]), 1),
+                **{k: _round(row.get(k)) for k in FEATURES[1:]},
+            }
     return found
 
 
-def get_tempos(track_ids: list[str]) -> dict[str, float | None]:
-    """Spotify track id -> tempo in BPM (None if unknown)."""
+def _round(v: object) -> float | None:
+    return round(float(v), 2) if isinstance(v, int | float) else None
+
+
+def _as_features(v: Features | float | None) -> Features | None:
+    """Cache entries are feature dicts; a bare number is treated as just a tempo."""
+    if v is None or isinstance(v, dict):
+        return v
+    return {"tempo": float(v), "energy": None, "danceability": None}
+
+
+def get_features(track_ids: list[str]) -> dict[str, Features | None]:
+    """Spotify track id -> {tempo, energy, danceability} (None if ReccoBeats doesn't know it)."""
     global _last_failure
-    out: dict[str, float | None] = {}
+    out: dict[str, Features | None] = {}
     missing: list[str] = []
     for tid in dict.fromkeys(track_ids):  # dedupe, keep order
         if tid in _cache:
-            out[tid] = _cache[tid]
-        elif (bpm := spotify.mock_tempo(tid)) is not None:
-            out[tid] = bpm
+            out[tid] = _as_features(_cache[tid])
+        elif (mock := spotify.mock_features(tid)) is not None:
+            out[tid] = mock
         else:
             missing.append(tid)
 
@@ -71,9 +92,15 @@ def get_tempos(track_ids: list[str]) -> dict[str, float | None]:
         if fetched is None:
             out.update(dict.fromkeys(chunk))
             continue
+        fetched = {k: _as_features(v) for k, v in fetched.items()}
         _cache.update(fetched)
         out.update(fetched)
     return out
+
+
+def get_tempos(track_ids: list[str]) -> dict[str, float | None]:
+    """Spotify track id -> tempo in BPM (None if unknown)."""
+    return {tid: (f or {}).get("tempo") for tid, f in get_features(track_ids).items()}
 
 
 def get_tempo(track_id: str) -> float | None:
@@ -121,3 +148,30 @@ def match(song_bpm: float | None, target_bpm: float | None) -> dict | None:
         "status": status,
         "speed_to_match": round(target_bpm / effective, 3),
     }
+
+
+# How energetic the music should feel for each coaching direction (ReccoBeats energy, 0-1).
+INTENSITY_ENERGY = {"push": 0.8, "hold": 0.65, "ease": 0.4}
+ENERGY_WEIGHT = 10  # 0.1 of energy off the goal counts like being 1 BPM off
+UNKNOWN_ENERGY_PENALTY = 0.2  # songs with no energy data rank as if 0.2 off
+
+
+def fit_score(match_info: dict | None, energy: float | None, intensity: str | None) -> float | None:
+    """Lower is better. Tempo stays in charge; energy breaks near-ties.
+
+    - tempo: distance from the target in BPM
+    - wrong way: when pushing, songs slower than the target count double (and faster ones when
+      easing off), so energy never drags the tempo the wrong way
+    - energy: how far the song is from what that direction wants (push = high, ease = calm)
+    """
+    if not match_info:
+        return None
+    diff = match_info["diff_bpm"]
+    score = abs(diff)
+    if (intensity == "push" and diff < 0) or (intensity == "ease" and diff > 0):
+        score += abs(diff)
+    want = INTENSITY_ENERGY.get(intensity or "")
+    if want is not None:
+        off = abs(energy - want) if energy is not None else UNKNOWN_ENERGY_PENALTY
+        score += ENERGY_WEIGHT * off
+    return round(score, 2)

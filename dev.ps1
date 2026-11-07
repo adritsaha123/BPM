@@ -8,13 +8,17 @@
 #   .\dev.ps1 -NgrokDomain your-name.ngrok-free.app
 #                          # public https backend via ngrok: enables "Connect Whoop" in the app
 #                          # and works without being on the same Wi-Fi (or set $env:BPM_NGROK_DOMAIN)
+#   .\dev.ps1 -Cloud https://bpm-backend-xxxx.onrender.com
+#                          # use the deployed backend (render.yaml): no local backend or ngrok, any network.
+#                          # Only Expo (and the Whoop relay, sending to the cloud) run here. Or set $env:BPM_CLOUD_URL
 #
 # If PowerShell refuses to run scripts, run once:
 #   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 param(
     [switch]$NoWhoop,
     [switch]$Tunnel,
-    [string]$NgrokDomain = $env:BPM_NGROK_DOMAIN
+    [string]$NgrokDomain = $env:BPM_NGROK_DOMAIN,
+    [string]$Cloud = $env:BPM_CLOUD_URL
 )
 $ErrorActionPreference = "Stop"
 
@@ -46,6 +50,12 @@ function Start-Window([string]$title, [string]$dir, [string]$command) {
 # ---- 0. Optional public URL (ngrok) ----
 $publicEnv = ""
 $appEnv = ""
+if ($Cloud) {
+    $Cloud = $Cloud.TrimEnd("/")
+    $NgrokDomain = ""  # the cloud backend is already public
+    $appEnv = "`$env:EXPO_PUBLIC_API_URL = '$Cloud'; "
+    Write-Host "Using the cloud backend: $Cloud (free plan: the first request after a nap takes ~30-60 s)" -ForegroundColor Cyan
+}
 if ($NgrokDomain) {
     if (-not (Get-Command ngrok -ErrorAction SilentlyContinue)) {
         throw "ngrok not found. Install it (winget install ngrok.ngrok), run 'ngrok config add-authtoken <token>', then retry."
@@ -58,14 +68,20 @@ if ($NgrokDomain) {
     Write-Host "Public backend: $publicUrl  (WHOOP redirect URL must be $publicUrl/whoop/callback)" -ForegroundColor Cyan
 }
 
-# ---- 1. Backend ----
-Start-Window "BPM backend" $backend "$publicEnv& '$py' -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+# ---- 1. Backend (skipped with -Cloud) ----
+if (-not $Cloud) {
+    Start-Window "BPM backend" $backend "$publicEnv& '$py' -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+}
 
 # ---- 2. Whoop live HR relay (waits for the backend first) ----
 if (-not $NoWhoop) {
     $wait = "while (-not (Test-NetConnection localhost -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue)) { Start-Sleep 1 }"
     Write-Host "Whoop app -> Device Settings -> Heart Rate Broadcast -> Start, then keep the band near this laptop." -ForegroundColor Yellow
-    Start-Window "BPM Whoop live HR" $backend "$wait; & '$py' scripts\whoop_live_hr.py"
+    if ($Cloud) {
+        Start-Window "BPM Whoop live HR" $backend "& '$py' scripts\whoop_live_hr.py --api '$Cloud'"
+    } else {
+        Start-Window "BPM Whoop live HR" $backend "$wait; & '$py' scripts\whoop_live_hr.py"
+    }
 }
 
 # ---- 3. Expo ----
@@ -74,7 +90,9 @@ Start-Window "BPM Expo" $mobile "$appEnv$expo"
 
 Write-Host ""
 Write-Host "Started. Scan the QR code in the 'BPM Expo' window with your iPhone Camera." -ForegroundColor Green
-if ($NgrokDomain) {
+if ($Cloud) {
+    Write-Host "Connect Whoop and Spotify from the app's setup screen."
+} elseif ($NgrokDomain) {
     Write-Host "Connect Whoop from the app's 'Whoop account' card (first visit may show an ngrok warning page: tap Visit Site)."
 } else {
     Write-Host "Whoop account: open http://localhost:8000/whoop/login on this laptop, or use -NgrokDomain to connect from the app."

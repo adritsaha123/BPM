@@ -1,7 +1,9 @@
 """Spotify Web API client: sign-in, playlists, liked songs, now playing, playback control.
 
-- OAuth 2.0 authorization code flow; the backend keeps the client secret. Tokens are saved to
-  SPOTIFY_TOKEN_FILE (backend/.spotify_tokens.json, gitignored) and refresh automatically.
+- OAuth 2.0 authorization code flow; the backend keeps the client secret. One login per app user
+  (X-User-Id header), like WHOOP; users who haven't connected fall back to the shared laptop login.
+  Tokens go to Postgres when DATABASE_URL is set, else to SPOTIFY_TOKEN_FILE
+  (backend/.spotify_tokens[.<user>].json, gitignored). They refresh automatically.
 - Mock mode: with SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET blank, everything runs against a
   fake library and a fake player (songs advance in real time), so the app can be built and
   demoed without a Spotify account.
@@ -16,16 +18,18 @@ Limits worth knowing (details in docs/SPOTIFY.md):
 from __future__ import annotations
 
 import base64
-import json
 import secrets
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
 import httpx
 
+from app import token_store
 from app.config import get_settings
+from app.whoop import DEFAULT_USER, valid_return_to, valid_user_id
 
 AUTH_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -55,66 +59,92 @@ class SpotifyAPIError(Exception):
         self.status_code = status_code
 
 
-# --------------------------------------------------------------------------- mode
+# --------------------------------------------------------------------------- user + mode
+
+# Whose Spotify login a request uses. routes/spotify.py sets it per request from the X-User-Id
+# header (an async dependency, so sync endpoints running in the threadpool see it too).
+_user: ContextVar[str] = ContextVar("spotify_user", default=DEFAULT_USER)
 
 
-def mode() -> str:
+def use_user(user: str | None) -> None:
+    _user.set(valid_user_id(user))
+
+
+def current_user() -> str:
+    return _user.get()
+
+
+def login_owner(user: str | None = None) -> str | None:
+    """Whose Spotify login serves this user: their own, else the shared laptop ("default") login."""
+    user = user or current_user()
+    if load_tokens(user) is not None:
+        return user
+    if user != DEFAULT_USER and load_tokens(DEFAULT_USER) is not None:
+        return DEFAULT_USER
+    return None
+
+
+def mode(user: str | None = None) -> str:
     """'mock' (no credentials), 'not_connected' (credentials, no login yet) or 'live'."""
     if not get_settings().spotify_enabled:
         return "mock"
-    return "live" if load_tokens() is not None else "not_connected"
+    return "live" if login_owner(user) is not None else "not_connected"
 
 
 # --------------------------------------------------------------------------- OAuth
 
-_pending_states: set[str] = set()
+_pending_states: dict[str, dict] = {}  # state -> {"user", "return_to", "at"}
+STATE_TTL_S = 900
 
 
-def authorization_url() -> str:
+def authorization_url(user: str = DEFAULT_USER, return_to: str | None = None) -> str:
     s = get_settings()
+    now = time.time()
+    for old in [k for k, v in _pending_states.items() if now - v["at"] > STATE_TTL_S]:
+        _pending_states.pop(old, None)
     state = secrets.token_urlsafe(12)
-    _pending_states.add(state)
+    _pending_states[state] = {"user": valid_user_id(user), "return_to": valid_return_to(return_to), "at": now}
     params = {
         "response_type": "code",
         "client_id": s.spotify_client_id,
         "redirect_uri": s.spotify_redirect_uri,
         "scope": SCOPES,
         "state": state,
+        "show_dialog": "true",  # let each person pick their own account on a shared phone/browser
     }
     return f"{AUTH_URL}?{urlencode(params)}"
 
 
-def consume_state(state: str) -> bool:
-    if state in _pending_states:
-        _pending_states.discard(state)
-        return True
-    return False
+def consume_state(state: str) -> dict | None:
+    """Returns {"user", "return_to"} for a state we issued, once; None otherwise."""
+    return _pending_states.pop(state, None)
 
 
-def _token_path() -> Path:
-    return Path(get_settings().spotify_token_file)
+def _token_path(user: str = DEFAULT_USER) -> Path:
+    base = Path(get_settings().spotify_token_file)
+    if user == DEFAULT_USER:
+        return base
+    return base.with_name(f"{base.stem}.{valid_user_id(user)}{base.suffix}")
 
 
-def load_tokens() -> dict | None:
-    path = _token_path()
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        return None
+def load_tokens(user: str | None = None) -> dict | None:
+    user = valid_user_id(user or current_user())
+    return token_store.load(f"spotify:{user}", _token_path(user))
 
 
-def save_tokens(tokens: dict) -> dict:
+def save_tokens(tokens: dict, user: str | None = None) -> dict:
+    user = valid_user_id(user or current_user())
     tokens = dict(tokens)
     tokens["expires_at"] = time.time() + int(tokens.get("expires_in", 3600)) - 60
-    path = _token_path()
-    path.write_text(json.dumps(tokens, indent=2))
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    token_store.save(f"spotify:{user}", _token_path(user), tokens)
     return tokens
+
+
+def disconnect(user: str | None = None) -> None:
+    """Forget this user's Spotify login."""
+    user = valid_user_id(user or current_user())
+    token_store.delete(f"spotify:{user}", _token_path(user))
+    _clear_cache(user)
 
 
 def _token_request(data: dict) -> dict:
@@ -126,33 +156,32 @@ def _token_request(data: dict) -> dict:
     return r.json()
 
 
-def exchange_code(code: str) -> dict:
+def exchange_code(code: str, user: str | None = None) -> dict:
+    user = valid_user_id(user or current_user())
     data = {
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": get_settings().spotify_redirect_uri,
     }
-    _cache.clear()
-    return save_tokens(_token_request(data))
+    _clear_cache(user)
+    return save_tokens(_token_request(data), user)
 
 
-def _refresh(tokens: dict) -> dict:
+def _refresh(tokens: dict, owner: str) -> dict:
     if not tokens.get("refresh_token"):
-        raise SpotifyNotConnectedError("Spotify session expired. Open /spotify/login on the laptop again.")
+        raise SpotifyNotConnectedError("Spotify session expired. Connect Spotify again in the app.")
     new = _token_request({"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"]})
     new.setdefault("refresh_token", tokens["refresh_token"])  # Spotify doesn't always rotate it
-    return save_tokens(new)
+    return save_tokens(new, owner)
 
 
 def _access_token(force_refresh: bool = False) -> str:
-    tokens = load_tokens()
-    if tokens is None:
-        raise SpotifyNotConnectedError(
-            "Spotify not connected yet. Open http://127.0.0.1:8000/spotify/login on the laptop "
-            "running the backend."
-        )
+    owner = login_owner()
+    tokens = load_tokens(owner) if owner else None
+    if owner is None or tokens is None:
+        raise SpotifyNotConnectedError("Spotify not connected yet. Tap Connect Spotify in the app.")
     if force_refresh or time.time() >= tokens.get("expires_at", 0):
-        tokens = _refresh(tokens)
+        tokens = _refresh(tokens, owner)
     return tokens["access_token"]
 
 
@@ -195,7 +224,10 @@ def _request(method: str, path: str, params: dict | None = None, body: dict | No
             timeout=20,
         )
         if r.status_code in (200, 201):
-            return r.json() if r.content else None
+            try:
+                return r.json() if r.content else None
+            except ValueError:  # e.g. POST /me/player/queue answers 200 with a non-JSON body
+                return None
         if r.status_code in (202, 204):
             return None
         if r.status_code == 401 and not force_refresh:
@@ -215,7 +247,13 @@ def _request(method: str, path: str, params: dict | None = None, body: dict | No
     raise SpotifyAPIError(f"{method} {path} failed after retries")
 
 
+def _clear_cache(user: str) -> None:
+    for key in [k for k in _cache if k[0] == user]:
+        _cache.pop(key, None)
+
+
 def _cached(key: tuple, fn):
+    key = (login_owner() or current_user(), *key)  # each Spotify account has its own library
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL_S:
         return hit[1]
@@ -331,6 +369,13 @@ def play(
     """Start specific tracks, a playlist (optionally at a track), or resume if nothing given."""
     if mode() == "mock":
         return _mock_play(uris, context_uri, offset_uri)
+    if uris and len(uris) == 1 and not context_uri and _is_playing():
+        # Spotify on iOS, running in the background, often stalls on "play this track"
+        # (ends up paused with nothing loaded, then iOS suspends it). Queue + skip keeps the
+        # audio going, so use that whenever something is already playing.
+        queue(uris[0])
+        next_track()
+        return
     body: dict[str, Any] = {}
     if uris:
         body["uris"] = uris
@@ -339,6 +384,14 @@ def play(
         if offset_uri:
             body["offset"] = {"uri": offset_uri}
     _with_device_fallback(lambda params: _request("PUT", "/me/player/play", params=params, body=body or None))
+
+
+def _is_playing() -> bool:
+    try:
+        playback = current_playback()
+    except SpotifyAPIError:
+        return False
+    return bool(playback and playback["is_playing"])
 
 
 NO_DEVICE_MESSAGE = (
@@ -458,8 +511,14 @@ _MOCK_PLAYLISTS = [
 ]
 
 
-def mock_tempo(track_id: str) -> float | None:
-    return _MOCK_TEMPO.get(track_id)
+def mock_features(track_id: str) -> dict | None:
+    """Mock songs: energy rises with tempo, with some spread so energy matters when ranking."""
+    bpm = _MOCK_TEMPO.get(track_id)
+    if bpm is None:
+        return None
+    i = _MOCK_BY_ID[track_id]
+    energy = min(0.95, max(0.15, 0.2 + (bpm - 72) / 110 * 0.65 + ((i * 7) % 5 - 2) * 0.06))
+    return {"tempo": bpm, "energy": round(energy, 2), "danceability": round(0.5 + (i % 4) * 0.1, 2)}
 
 
 def _mock_playlist_tracks(playlist_id: str) -> list[dict]:
