@@ -18,7 +18,10 @@ export default function WorkoutScreen() {
   const running = useSession((s) => s.status === "running");
 
   useEffect(() => {
-    if (!running) router.replace("/");
+    if (!running) {
+      if (router.canGoBack()) router.back();
+      else router.replace("/");
+    }
   }, [running]);
 
   async function onStop() {

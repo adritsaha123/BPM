@@ -2,6 +2,7 @@ import { musicPlayer } from "../audio/player";
 import { location } from "../sources/location";
 import { mock } from "../sources/mock";
 import { pedometer } from "../sources/pedometer";
+import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { isHrFresh, useBio } from "../store/bio";
 import { useSession } from "../store/session";
@@ -47,8 +48,10 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
   const session = useSession.getState();
   useBio.getState().reset();
 
-  mock.start({ hr: session.simHr, motion: session.simMotion });
-  if (!session.simHr && useBio.getState().hrStatus !== "connected") whoopHr.connect(); // non-blocking; loop holds until HR arrives
+  mock.start({ hr: session.hrSource === "sim", motion: session.simMotion });
+  // HR sources are non-blocking: the loop holds BPM steady until fresh HR arrives.
+  if (session.hrSource === "laptop") relayHr.start();
+  if (session.hrSource === "phone" && useBio.getState().hrStatus !== "connected") whoopHr.connect();
   if (!session.simMotion) {
     if (!(await pedometer.start())) warnings.push("Motion access denied or unavailable — no cadence.");
     if (!(await location.start())) warnings.push("Location denied — no pace.");
@@ -75,5 +78,5 @@ export async function stopWorkout() {
   pedometer.stop();
   await location.stop();
   useSession.getState().setRunning(false);
-  // Whoop stays connected between workouts; disconnect explicitly from the setup screen.
+  // Whoop / laptop relay stay connected between workouts so the setup screen shows live status.
 }

@@ -1,25 +1,44 @@
 import { Link, router } from "expo-router";
-import { useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
+import { api, type WhoopSummary } from "../api";
 import { Button, Card, Segmented, Stepper } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { startWorkout } from "../engine/workout";
 import { isExpoGo } from "../runtime";
+import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { useBio, type HrStatus } from "../store/bio";
-import { useSession, type ZoneMode } from "../store/session";
+import { useSession, type HrSource, type ZoneMode } from "../store/session";
 import { colors, spacing } from "../theme";
 
-const STATUS_TEXT: Record<HrStatus, string> = {
-  idle: "Not connected",
-  "bluetooth-off": "Bluetooth is off",
-  scanning: "Searching for Whoop…",
-  connecting: "Connecting…",
-  connected: "Connected",
-  disconnected: "Disconnected — reconnecting…",
-  error: "Couldn't connect",
+const STATUS_TEXT: Record<Exclude<HrSource, "sim">, Record<HrStatus, string>> = {
+  phone: {
+    idle: "Not connected",
+    "bluetooth-off": "Bluetooth is off",
+    scanning: "Searching for Whoop…",
+    connecting: "Connecting…",
+    connected: "Connected",
+    disconnected: "Disconnected — reconnecting…",
+    error: "Couldn't connect",
+  },
+  laptop: {
+    idle: "Not started",
+    "bluetooth-off": "Bluetooth is off",
+    scanning: "Waiting for the laptop script…",
+    connecting: "Contacting the backend…",
+    connected: "Live",
+    disconnected: "Stream went stale",
+    error: "Can't reach the backend",
+  },
 };
+
+const SOURCE_OPTIONS: { value: HrSource; label: string }[] = [
+  { value: "laptop", label: "Laptop relay" },
+  ...(isExpoGo ? [] : [{ value: "phone" as const, label: "Phone BT" }]),
+  { value: "sim", label: "Simulated" },
+];
 
 export default function SetupScreen() {
   const hrStatus = useBio((s) => s.hrStatus);
@@ -30,16 +49,36 @@ export default function SetupScreen() {
   const mode = useSession((s) => s.mode);
   const hrZone = useSession((s) => s.hrZone);
   const paceZone = useSession((s) => s.paceZone);
-  const simHr = useSession((s) => s.simHr);
+  const hrSource = useSession((s) => s.hrSource);
   const simMotion = useSession((s) => s.simMotion);
-  const { setMode, setZone, setSimHr, setSimMotion } = useSession.getState();
+  const { setMode, setZone, setHrSource, setSimMotion } = useSession.getState();
 
   const [starting, setStarting] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [whoop, setWhoop] = useState<WhoopSummary | null>(null);
 
+  // Laptop relay polls while selected so you can see live HR before starting.
+  useEffect(() => {
+    if (hrSource !== "laptop") return;
+    relayHr.start();
+    return () => relayHr.stop();
+  }, [hrSource]);
+
+  // Personal HR zones from the Whoop history API (sample data until Whoop is connected on the backend).
+  useEffect(() => {
+    api.whoopSummary().then(setWhoop).catch(() => setWhoop(null));
+  }, []);
+
+  function changeSource(next: HrSource) {
+    if (next === hrSource) return;
+    if (hrSource === "phone") whoopHr.disconnect();
+    setHrSource(next);
+  }
+
+  const sim = hrSource === "sim";
   const busy = hrStatus === "scanning" || hrStatus === "connecting";
   const connected = hrStatus === "connected";
-  const canStart = simHr || connected;
+  const canStart = sim || connected;
 
   async function onStart() {
     setStarting(true);
@@ -63,31 +102,32 @@ export default function SetupScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {isExpoGo && (
-        <Card style={styles.notice}>
-          <Text style={styles.noticeText}>
-            Running in Expo Go: Whoop Bluetooth isn't available, so heart rate is simulated. Cadence and pace use your
-            phone's real sensors. Keep the app open while testing.
-          </Text>
-        </Card>
-      )}
-
       <Card title="Heart rate · Whoop">
+        <Segmented<HrSource> options={SOURCE_OPTIONS} value={hrSource} onChange={changeSource} />
+
         <View style={styles.row}>
           <View
-            style={[styles.dot, { backgroundColor: simHr || connected ? colors.ok : busy ? colors.primary : colors.muted }]}
+            style={[styles.dot, { backgroundColor: sim || connected ? colors.ok : busy ? colors.primary : colors.muted }]}
           />
           <Text style={styles.status}>
-            {simHr ? "Using simulated heart rate" : STATUS_TEXT[hrStatus]}
-            {!simHr && hrDevice && connected ? ` · ${hrDevice}` : ""}
+            {sim ? "Simulated HR (follows your cadence)" : STATUS_TEXT[hrSource][hrStatus]}
+            {!sim && hrDevice && connected ? ` · ${hrDevice}` : ""}
           </Text>
-          {busy && <ActivityIndicator size="small" />}
-          {!simHr && connected && hr != null && <Text style={styles.liveHr}>{hr} bpm</Text>}
+          {!sim && busy && <ActivityIndicator size="small" />}
+          {!sim && connected && hr != null && <Text style={styles.liveHr}>{hr} bpm</Text>}
         </View>
 
-        {!simHr && (
+        {!sim && hrError && !connected && <Text style={styles.error}>{hrError}</Text>}
+
+        {hrSource === "laptop" && !connected && (
+          <Text style={styles.help}>
+            On the laptop: start the backend, turn on Heart Rate Broadcast in the Whoop app, then run{" "}
+            <Text style={styles.code}>python scripts/whoop_live_hr.py</Text> in backend/. Keep the band near the laptop.
+          </Text>
+        )}
+
+        {hrSource === "phone" && (
           <>
-            {hrError && <Text style={styles.error}>{hrError}</Text>}
             {!connected && (
               <Text style={styles.help}>
                 In the Whoop app, open your device settings and turn on Heart Rate Broadcast. Keep the strap close to
@@ -102,12 +142,10 @@ export default function SetupScreen() {
           </>
         )}
 
-        <View style={styles.row}>
-          <Text style={[styles.status, { flex: 1 }]}>
-            Simulated heart rate{isExpoGo ? " (required in Expo Go)" : ""}
-          </Text>
-          <Switch value={simHr} onValueChange={setSimHr} disabled={isExpoGo} />
-        </View>
+        {isExpoGo && (
+          <Text style={styles.help}>Phone Bluetooth needs a development build, so it's hidden in Expo Go.</Text>
+        )}
+
         <View style={styles.row}>
           <Text style={[styles.status, { flex: 1 }]}>Simulated running (test at a desk)</Text>
           <Switch value={simMotion} onValueChange={setSimMotion} />
@@ -140,6 +178,31 @@ export default function SetupScreen() {
             onChange={(v) => updateZone("max", v)}
           />
         </View>
+
+        {mode === "hr" && whoop && whoop.hr_zones.length > 0 && (
+          <View style={{ gap: spacing.sm }}>
+            <Text style={styles.help}>
+              Your Whoop zones{whoop.mode === "live" ? "" : " (sample data until Whoop is connected on the backend)"}:
+            </Text>
+            <View style={styles.chips}>
+              {whoop.hr_zones.map((z) => {
+                const active = hrZone.min === z.min_bpm && hrZone.max === z.max_bpm;
+                return (
+                  <Pressable
+                    key={z.zone}
+                    accessibilityRole="button"
+                    onPress={() => setZone("hr", { min: z.min_bpm, max: z.max_bpm })}
+                    style={[styles.chip, active && styles.chipActive]}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      Z{z.zone} {z.min_bpm}–{z.max_bpm}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        )}
       </Card>
 
       {warnings.map((w) => (
@@ -149,7 +212,7 @@ export default function SetupScreen() {
       ))}
 
       <Button label={starting ? "Starting…" : "Start workout"} onPress={onStart} disabled={!canStart || starting} />
-      {!canStart && <Text style={styles.help}>Connect your Whoop or turn on simulated heart rate to start.</Text>}
+      {!canStart && <Text style={styles.help}>Waiting for live heart rate, or pick Simulated to start now.</Text>}
 
       <Link href="/ai" style={styles.link}>
         AI demo →
@@ -166,7 +229,11 @@ const styles = StyleSheet.create({
   liveHr: { marginLeft: "auto", fontSize: 15, fontWeight: "700", color: colors.error },
   help: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   error: { fontSize: 14, color: colors.error },
-  notice: { backgroundColor: "#EEF2FF" },
-  noticeText: { fontSize: 14, color: colors.text, lineHeight: 20 },
+  code: { fontFamily: "Menlo", fontSize: 13, color: colors.text },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  chip: { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 14, backgroundColor: colors.bg },
+  chipActive: { backgroundColor: colors.primary },
+  chipText: { fontSize: 13, color: colors.text, fontVariant: ["tabular-nums"] },
+  chipTextActive: { color: "#fff", fontWeight: "600" },
   link: { textAlign: "center", color: colors.primary, fontSize: 14, paddingVertical: spacing.sm },
 });

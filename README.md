@@ -46,13 +46,31 @@ npm install
 npx expo start      # scan the QR code with the iPhone Camera app → opens in Expo Go
 ```
 
-In Expo Go the app runs with two limits, set up automatically:
-- **Heart rate is simulated.** Expo Go can't use Bluetooth, so Whoop can't connect. The simulated HR follows your real cadence.
+**Live Whoop HR in Expo Go comes through the laptop** (Expo Go can't use Bluetooth itself):
+
+```
+Whoop band ──Bluetooth──▶ laptop script ──POST /live/hr──▶ FastAPI ◀──polls every 1s── app
+```
+
+Run these on the laptop, each in its own terminal (Windows shown; macOS/Linux use `source .venv/bin/activate`):
+
+```powershell
+# 1. Backend
+cd backend; .venv\Scripts\activate; uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 2. Whoop → laptop (first: Whoop app → Device Settings → Heart Rate Broadcast → Start)
+cd backend; .venv\Scripts\activate; pip install -r requirements-ble.txt; python scripts/whoop_live_hr.py
+# 3. App
+cd mobile; npx expo start
+```
+
+On the setup screen pick **Laptop relay**. The status turns **Live** with your bpm once readings arrive. Tap a **Whoop zone** chip to set your target. Full details: `docs/WHOOP.md`.
+
+Limits in Expo Go:
+- **The band must stay within Bluetooth range of the laptop** (a few meters). Good for a treadmill or on-stage demo; use the **Heart rate** zone there, since GPS pace is ~0 on a treadmill.
 - **Keep the app open.** Background GPS isn't available, so pace only updates while the app is on screen.
+- No band handy? Pick **Simulated** (HR follows your real cadence) and/or turn on **Simulated running** to test at a desk.
 
-Cadence (pedometer), pace (GPS), music and the BPM loop are all real. Turn on **Simulated running** to test at a desk.
-
-**Real Whoop heart rate needs a development build** (rebuild only when native packages or `app.json` change):
+**Phone-only Whoop Bluetooth (no laptop) needs a development build** (rebuild only when native packages or `app.json` change):
 
 ```bash
 cd mobile
@@ -71,7 +89,7 @@ On the iOS Simulator (no Bluetooth or GPS), turn on **Simulated heart rate** and
 |---|---|
 | `runtime.ts` | `isExpoGo` flag: switches Bluetooth and background GPS off in Expo Go |
 | `app/` | Expo Router screens: `index` (setup), `workout` (live), `ai` (AI demo) |
-| `sources/` | `whoopBle` (live HR over Bluetooth), `pedometer` (cadence), `location` (pace + background), `mock` (simulated HR and/or running) |
+| `sources/` | `relayHr` (live HR via the laptop relay), `whoopBle` (live HR over phone Bluetooth, dev build), `pedometer` (cadence), `location` (pace + background), `mock` (simulated HR and/or running) |
 | `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop) |
 | `audio/` | `player.ts` (time-stretch + crossfade), `tracks.ts` (track catalog with BPMs) |
 | `store/` | Zustand stores: `bio` (live biometrics), `session` (zone, target BPM, log) |

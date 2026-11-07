@@ -56,7 +56,8 @@ Mobile: typed wrappers are in `mobile/src/api.ts` (`api.whoopSummary()`, `api.li
    python scripts/whoop_live_hr.py            # add --no-post to just print
    ```
 3. macOS asks your terminal for Bluetooth permission the first time. Allow it (System Settings → Privacy & Security → Bluetooth).
-4. The app polls `GET /live/hr`. `age_s` tells you if the stream went stale.
+4. In the app, pick **Laptop relay** on the setup screen. `mobile/src/sources/relayHr.ts` polls `GET /live/hr` every second and feeds the BPM loop; it treats readings older than 5 s (`age_s`) as stale and holds the music BPM steady until they're fresh again.
+5. The setup screen also shows your `/whoop/summary` HR zones as chips; tap one to set the target zone.
 
 Any standard Bluetooth heart rate monitor works the same way (`--name ""` takes the first one found).
 
