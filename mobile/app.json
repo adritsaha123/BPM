@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "Hackathon App",
+    "name": "BPM Coach",
     "slug": "bpm",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bpmemergent.bpm"
     },
     "android": {
       "adaptiveIcon": {
@@ -26,6 +27,44 @@
         "projectId": "dbe17b9b-3c76-46e0-9684-40e8f975e7e0"
       }
     },
-    "owner": "bpm-emergent"
+    "owner": "bpm-emergent",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "enableBackgroundPlayback": true
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": true,
+          "modes": [
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "BPM Coach connects to your Whoop to read live heart rate during workouts."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "isIosBackgroundLocationEnabled": true,
+          "locationWhenInUsePermission": "BPM Coach uses GPS to measure your running pace.",
+          "locationAlwaysAndWhenInUsePermission": "BPM Coach keeps measuring your pace while your phone is locked during a workout."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "BPM Coach uses motion data to measure your running cadence."
+        }
+      ],
+      "expo-asset",
+      "expo-web-browser",
+      "expo-secure-store"
+    ],
+    "scheme": "bpm"
   }
 }

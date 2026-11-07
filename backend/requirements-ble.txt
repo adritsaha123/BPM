@@ -1,0 +1,3 @@
+# Only needed on the laptop that reads the WHOOP band live (scripts/whoop_live_hr.py).
+# Kept separate so a Bluetooth install problem never breaks the main backend or CI.
+bleak==3.0.2
