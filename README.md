@@ -144,6 +144,7 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 
 ## Where to change things
 - **AI behavior / prompts:** `backend/app/llm.py` (switch providers here, nothing else changes)
+- **WHOOP history + live heart rate:** `backend/app/whoop.py`, `routes/whoop.py`, `routes/live.py`. Setup in `docs/WHOOP.md`
 - **New endpoint:** copy `backend/app/routes/items.py`
 - **New screen:** add a file to `mobile/src/app/` (Expo Router)
 - **BPM rules (step size, cooldown, limits):** `CONTROL` in `mobile/src/engine/controller.ts`

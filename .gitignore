@@ -19,3 +19,7 @@ node_modules/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# WHOOP OAuth tokens and exported health data — never commit
+.whoop_tokens.json
+backend/data/
