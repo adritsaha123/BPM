@@ -289,5 +289,9 @@ export const api = {
   spotifyPlay: (uris?: string[]) =>
     request<void>("/spotify/play", { method: "POST", body: JSON.stringify({ uris }) }),
   spotifyPause: () => request<void>("/spotify/pause", { method: "POST" }),
+  /** Device volume; `supported` is false where Spotify refuses remote volume (usually iPhone). */
+  spotifyVolume: () => request<{ percent: number | null; supported: boolean }>("/spotify/volume"),
+  spotifySetVolume: (percent: number) =>
+    request<void>("/spotify/volume", { method: "PUT", body: JSON.stringify({ percent: Math.round(percent) }) }),
   spotifyNext: () => request<void>("/spotify/next", { method: "POST" }),
 };

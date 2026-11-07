@@ -40,8 +40,11 @@ The phone's controller (`mobile/src/engine/controller.ts`) still decides the tar
 tempo only changes when the song does); `mobile/src/audio/spotifyOutput.ts` turns that into songs:
 
 - **Start:** plays the best match for the starting BPM (`POST /spotify/sync` with `target_bpm`, `play_now: true`).
-- **Target changes:** if the current song is 6+ BPM off the new target, switches now (at most once every 45 s);
-  otherwise the next song uses the new target.
+- **Target changes:** if the current song is 10+ BPM off the new target, switches now (at most once every 45 s),
+  fading the volume down and back up (`GET/PUT /spotify/volume`) where Spotify allows remote volume
+  (desktop app, speakers; usually not iPhone, where it cuts). Otherwise the next song uses the new target.
+- **Blending songs:** turn on **Crossfade** in Spotify (Settings → Playback, ~6-8 s). The API can't set it,
+  but it blends the end-of-song changes, which are most of them.
 - **Near the end of each song:** queues the best match for the current target (Auto-DJ).
 - **Song energy follows the coaching:** heart rate below the zone → fast *and* high-energy songs;
   above it → calmer ones; in the zone → middle energy. Energy (0-1) comes from ReccoBeats with the tempo.

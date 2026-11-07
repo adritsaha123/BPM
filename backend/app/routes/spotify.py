@@ -384,6 +384,21 @@ def pause() -> None:
     _call(spotify.pause)
 
 
+class VolumeIn(BaseModel):
+    percent: int = Field(ge=0, le=100)
+
+
+@router.get("/volume")
+def volume() -> dict:
+    """Device volume, and whether Spotify allows changing it remotely (used to fade song switches)."""
+    return _call(spotify.volume)
+
+
+@router.put("/volume", status_code=204)
+def set_volume(body: VolumeIn) -> None:
+    _call(spotify.set_volume, body.percent)
+
+
 @router.post("/next", status_code=204)
 def next_track() -> None:
     _call(spotify.next_track)

@@ -7,8 +7,10 @@ import { useSession } from "../store/session";
  *
  * Spotify can't change playback speed, so instead of time-stretching we:
  *  - start: play the best match for the starting BPM now
- *  - BPM change: if the current song is far off the new target, switch now (rate-limited);
- *    otherwise the next song will use the new target
+ *  - BPM change: if the current song is far off the new target, switch now (rate-limited), fading
+ *    the volume down and back up where Spotify allows remote volume (desktop, speakers; usually
+ *    not iPhone, where it just cuts). Otherwise the next song uses the new target, so most changes
+ *    happen at the end of a song, where Spotify's own Crossfade setting blends them.
  *  - near the end of each song: queue the best match for the current target (Auto-DJ)
  *  - song energy follows the coaching direction: below the zone → high-energy songs,
  *    above it → calmer ones (setIntensity, fed by the workout loop)
@@ -18,9 +20,12 @@ import { useSession } from "../store/session";
  */
 const POLL_MS = 3000;
 const QUEUE_LEAD_MS = 20_000; // queue the next match when this much of the song is left
-const SWITCH_NOW_DIFF_BPM = 6; // current song this far off the target → switch immediately
+const SWITCH_NOW_DIFF_BPM = 10; // current song this far off the target → switch immediately
 const MIN_SWITCH_GAP_MS = 45_000; // never cut songs more often than this
 const START_CHECK_MS = 3000; // after starting, confirm Spotify is really playing
+const FADE_STEPS = 5; // volume steps each way for a mid-song switch (each is a Spotify API call)
+const FADE_STEP_MS = 300;
+const FADE_FLOOR = 0.15; // fade down to this share of the volume, never to silence
 
 let poll: ReturnType<typeof setInterval> | null = null;
 let target = 160;
@@ -50,6 +55,31 @@ async function playBestNow() {
   current = res.track;
   queuedForTrackId = null;
   publish(res.track);
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function rampVolume(from: number, to: number) {
+  for (let i = 1; i <= FADE_STEPS; i++) {
+    await api.spotifySetVolume(from + ((to - from) * i) / FADE_STEPS);
+    await sleep(FADE_STEP_MS);
+  }
+}
+
+/** Mid-song switch: fade out, change song, fade back in. Falls back to a plain cut where Spotify
+ *  won't let us change the volume. The volume is always restored, even if the switch fails. */
+async function switchWithFade() {
+  lastSwitchAt = Date.now(); // block repeat switches while the fade runs
+  const vol = await api.spotifyVolume().catch(() => null);
+  const full = vol?.supported ? vol.percent : null;
+  if (!full) return playBestNow();
+  const low = full * FADE_FLOOR;
+  try {
+    await rampVolume(full, low);
+    await playBestNow();
+  } finally {
+    await rampVolume(low, full).catch(() => api.spotifySetVolume(full).catch(() => {}));
+  }
 }
 
 async function tick() {
@@ -105,7 +135,7 @@ export const spotifyOutput = {
       switchOnResume = true;
       publish(current);
     } else if (off >= SWITCH_NOW_DIFF_BPM && Date.now() - lastSwitchAt > MIN_SWITCH_GAP_MS) {
-      playBestNow().catch(() => {});
+      switchWithFade().catch(() => {});
     } else {
       publish(current); // refresh the shown BPM; the next queued song uses the new target
     }

@@ -152,6 +152,14 @@ def test_sync_play_now_and_needs_a_target(mock_mode):
     assert client.get("/spotify/now-playing").json()["track"]["id"] == r["track"]["id"]
 
 
+def test_mock_volume_roundtrip(mock_mode):
+    assert client.get("/spotify/volume").json() == {"percent": 80, "supported": True}
+    assert client.put("/spotify/volume", json={"percent": 30}).status_code == 204
+    assert client.get("/spotify/volume").json()["percent"] == 30
+    assert client.put("/spotify/volume", json={"percent": 150}).status_code == 422
+    spotify.mock_reset()
+
+
 def test_mock_player_pause_resume_and_auto_advance(mock_mode):
     client.post("/spotify/pause")
     paused = client.get("/spotify/now-playing").json()

@@ -444,6 +444,24 @@ def next_track() -> None:
     _request("POST", "/me/player/next")
 
 
+def volume() -> dict:
+    """The active device volume. `supported` is False where Spotify refuses remote volume
+    (usually Spotify on iPhone), so callers skip fades there."""
+    if mode() == "mock":
+        return {"percent": _mock["volume"], "supported": True}
+    data = _request("GET", "/me/player") or {}
+    device = data.get("device") or {}
+    percent = device.get("volume_percent")
+    return {"percent": percent, "supported": bool(device.get("supports_volume")) and percent is not None}
+
+
+def set_volume(percent: int) -> None:
+    if mode() == "mock":
+        _mock["volume"] = percent
+        return
+    _request("PUT", "/me/player/volume", params={"volume_percent": max(0, min(100, int(percent)))})
+
+
 def queue(uri: str) -> None:
     if mode() == "mock":
         return _mock_queue(uri)
@@ -533,11 +551,11 @@ def _mock_playlist_tracks(playlist_id: str) -> list[dict]:
     return [dict(t) for t in keep]
 
 
-_mock = {"index": 10, "started_at": time.time(), "paused_ms": None, "queue": []}
+_mock = {"index": 10, "started_at": time.time(), "paused_ms": None, "queue": [], "volume": 80}
 
 
 def mock_reset() -> None:
-    _mock.update(index=10, started_at=time.time(), paused_ms=None, queue=[])
+    _mock.update(index=10, started_at=time.time(), paused_ms=None, queue=[], volume=80)
 
 
 def _mock_progress_ms() -> int:

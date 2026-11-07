@@ -345,7 +345,7 @@ export default function SetupScreen() {
             ? "Smoothly speeds the beat up or down to the exact BPM."
             : musicSource === "dj"
               ? "Real songs from Jamendo (Creative Commons), each locked to the exact BPM and blended into the next like a DJ. Artist and license are shown while playing."
-              : `Plays songs from your Liked Songs at the target tempo, switching song by song. ${
+              : `Plays songs from your Liked Songs at the target tempo, switching song by song. Tip: turn on Crossfade in Spotify (Settings → Playback) so songs blend. ${
                 spotifyShared ? "Using the laptop's shared Spotify login." : SPOTIFY_MODE_TEXT[spotifyMode ?? "loading"]
               }`}
         </Text>
