@@ -90,13 +90,37 @@ Splitting by folder means you'll rarely edit the same file, which keeps merge co
 - Open a PR and get a quick 👍 from one teammate. CI must be green. Squash-merge.
 - In the last 2 hours, **freeze `main`** and only merge bug fixes.
 
+#### Making a PR, step by step
+
 ```bash
-git checkout main && git pull
-git checkout -b yourname/feature
-# ...work...
-git add -A && git commit -m "Add feature"
-git push -u origin yourname/feature    # then open a PR on GitHub
+# 1. Start from an up-to-date main and create a branch
+git checkout main
+git pull
+git checkout -b yourname/feature-name
+
+# 2. Do the work, then check what changed
+git status
+
+# 3. Stage what you want to commit
+#    Name paths explicitly rather than using `git add -A`, so stray files and .env don't get in
+git add mobile/src README.md
+
+# 4. Commit with a message that says what changed
+git commit -m "Add Whoop reconnect indicator"
+
+# 5. Push the branch (-u links it, so later pushes are just `git push`)
+git push -u origin yourname/feature-name
+
+# 6. Open the PR (or use the link GitHub prints after the push)
+gh pr create --base main --title "Short title" --body "What + how to test"
 ```
+
+**After it's open:**
+- **More changes:** commit on the same branch and run `git push`. The PR updates automatically.
+- **Check CI** with `gh pr checks <number>`, or look at the PR page. It typechecks `mobile/` and runs the backend tests.
+- **Merge** once a teammate approves and CI is green: `gh pr merge <number> --squash --delete-branch`. Everyone then runs `git checkout main && git pull`.
+
+> No `gh`? Install the [GitHub CLI](https://cli.github.com) and run `gh auth login` once, or open the PR from the link `git push` prints.
 
 ### Keep the API contract in sync
 When you add an endpoint in `backend/app/routes/`, add a typed function for it in `mobile/src/api.ts` in the **same PR**. Copy `routes/items.py` as a template. Register the router in `app/main.py`.
