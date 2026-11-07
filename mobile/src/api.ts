@@ -203,6 +203,9 @@ export const api = {
   whoopSummary: (days = 30) => request<WhoopSummary>(`/whoop/summary?days=${days}`),
   /** Latest live bpm from the band (poll every 1-2s). bpm is null until the BLE script runs. */
   liveHr: (windowS = 30) => request<LiveHr>(`/live/hr?window_s=${windowS}`),
+  /** Send a heart rate reading to the backend (the phone build reading the band itself). */
+  pushHr: (bpm: number, source: string) =>
+    request<void>("/live/hr", { method: "POST", body: JSON.stringify({ bpm, source }) }),
 
   spotifyStatus: () =>
     request<{ mode: SpotifyMode; login_url: string; user: string; shared?: boolean }>("/spotify/status"),
