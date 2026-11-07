@@ -10,7 +10,7 @@ Mobile app + Python API + AI, ready to go before the clock starts.
 | CI | GitHub Actions: lint + tests + typecheck on every PR | `.github/` |
 
 ```
-phone (Expo Go) ──HTTP──▶ FastAPI :8000 ──▶ Claude API / other APIs
+iPhone (dev build) ──HTTP──▶ FastAPI :8000 ──▶ Claude API / other APIs
 ```
 
 The app never calls the AI or third-party APIs directly. Everything goes through the backend, so **API keys stay off the phone**.
@@ -19,7 +19,7 @@ The app never calls the AI or third-party APIs directly. Everything goes through
 
 ## Quick start (everyone, before the hackathon)
 
-**Install once:** [Node 22+](https://nodejs.org), [Python 3.11+](https://python.org), Git, and the **Expo Go** app on your phone (it must support SDK 58).
+**Install once:** [Node 22+](https://nodejs.org), [Python 3.11+](https://python.org), Git, an iPhone, and an Expo account (`npx eas-cli@latest login`) for development builds.
 
 ### 1. Backend
 
@@ -36,23 +36,39 @@ Check it at http://localhost:8000/docs (interactive API docs).
 
 > `--host 0.0.0.0` is required so your phone can reach your laptop.
 
-### 2. Mobile app (second terminal)
+### 2. Mobile app (second terminal) — iOS only
+
+The app uses Bluetooth, background GPS and audio, so **Expo Go won't work**. You need a development build once (rebuild only when native packages or `app.json` change):
 
 ```bash
 cd mobile
 npm install
-npx expo start
+npx eas-cli@latest build --profile development --platform ios   # cloud build, install on your iPhone
+npx expo start                                                  # then open the dev build app
 ```
 
-Scan the QR code with Expo Go (Android) or the Camera app (iOS). Press `w` to open it in a browser.
-The app finds the backend on your laptop automatically. The top of the demo screen shows **Connected**.
+On a Mac with Xcode, `npx expo run:ios --device` also works.
+On the iOS Simulator (no Bluetooth or GPS), turn on **Demo mode** on the setup screen.
+
+**Whoop:** in the Whoop app, turn on **Heart Rate Broadcast** in your device settings, then tap **Connect Whoop**.
+
+#### How the BPM app fits together (`mobile/src`)
+| Folder | What's there |
+|---|---|
+| `app/` | Expo Router screens: `index` (setup), `workout` (live), `ai` (AI demo) |
+| `sources/` | `whoopBle` (live HR over Bluetooth), `pedometer` (cadence), `location` (pace + background), `mock` (simulated runner) |
+| `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop) |
+| `audio/` | `player.ts` (time-stretch + crossfade), `tracks.ts` (track catalog with BPMs) |
+| `store/` | Zustand stores: `bio` (live biometrics), `session` (zone, target BPM, log) |
+
+Demo drum loops live in `assets/music` (`npm run gen:tracks` regenerates them). To add real songs, drop the files in that folder and add them to `audio/tracks.ts` with their BPM.
 
 ### Phone can't connect? (common on hackathon Wi-Fi)
 
 Venue and campus Wi-Fi often block device-to-device traffic. Fixes, in order:
 1. Put your phone and laptop on the same **phone hotspot**.
 2. Start Expo with `npx expo start --tunnel`, then expose the backend with `ngrok http 8000` and put the ngrok URL in `mobile/.env` as `EXPO_PUBLIC_API_URL=...` (restart Expo).
-3. Fallback: press `w` and demo in the browser.
+3. Fallback: turn on **Demo mode** on the setup screen. The BPM loop runs fully on the phone, so it doesn't need the backend.
 
 ---
 
@@ -90,9 +106,9 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 ## Where to change things
 - **AI behavior / prompts:** `backend/app/llm.py` (switch providers here, nothing else changes)
 - **New endpoint:** copy `backend/app/routes/items.py`
-- **New screen:** add to `mobile/src/screens/`, render it in `mobile/App.tsx`
+- **New screen:** add a file to `mobile/src/app/` (Expo Router)
+- **BPM rules (step size, cooldown, limits):** `CONTROL` in `mobile/src/engine/controller.ts`
 - **Colors and spacing:** `mobile/src/theme.ts`
-- **Need multiple screens/tabs?** Add Expo Router: https://docs.expo.dev/router/introduction/
 - **Need a real database?** Swap the in-memory dict in `items.py` for SQLite (SQLModel) or Supabase
 
 ## Deploying for the demo (optional)
