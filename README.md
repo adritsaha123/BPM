@@ -1,10 +1,10 @@
-# Hackathon Starter
+# BPM Coach
 
-Mobile app + Python API + AI, ready to go before the clock starts.
+An iOS running coach that changes the music's tempo to keep your heart rate in a training zone. Live heart rate comes from a Whoop band; music is built-in tracks (exact tempo) or Spotify (songs picked by tempo and energy).
 
 | Part | Tech | Folder |
 |---|---|---|
-| Mobile app (iOS, Android, web) | Expo SDK 58 · React Native · TypeScript | `mobile/` |
+| Mobile app (iOS) | Expo SDK 58 · React Native · TypeScript | `mobile/` |
 | API | FastAPI · Python 3.11+ | `backend/` |
 | AI | Claude API through `backend/app/llm.py` (mock mode without a key) | `backend/app/llm.py` |
 | CI | GitHub Actions: lint + tests + typecheck on every PR | `.github/` |
@@ -163,7 +163,7 @@ On the iOS Simulator (no Bluetooth or GPS), turn on **Simulated heart rate** and
 | Folder | What's there |
 |---|---|
 | `runtime.ts` | `isExpoGo` flag: switches Bluetooth and background GPS off in Expo Go |
-| `app/` | Expo Router screens: `index` (setup), `workout` (live), `music` (Spotify screen), `ai` (AI demo) |
+| `app/` | Expo Router screens: `index` (setup), `workout` (live), `music` (Spotify screen) |
 | `sources/` | `relayHr` (live HR via the laptop relay), `whoopBle` (live HR over phone Bluetooth, dev build), `pedometer` (cadence), `location` (pace + background), `mock` (simulated HR and/or running) |
 | `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop) |
 | `audio/` | `music.ts` (picks the music source), `player.ts` (built-in tracks: time-stretch + crossfade), `tracks.ts` (track catalog with BPMs), `spotifyOutput.ts` (Spotify: songs picked by tempo) |
@@ -187,7 +187,7 @@ Venue and campus Wi-Fi often block device-to-device traffic. Fixes, in order:
 |---|---|---|
 | **A: Mobile/UI** | Screens, navigation, look and feel | `mobile/src/screens`, `mobile/src/theme.ts` |
 | **B: Backend/AI** | Endpoints, prompts, external APIs | `backend/app/routes`, `backend/app/llm.py` |
-| **C: Integration + pitch** | Wiring screens to the API, demo data, deploy, Devpost, slides, video | `mobile/src/api.ts`, `docs/PITCH.md` |
+| **C: Integration + pitch** | Wiring screens to the API, demo data, deploy, Devpost, slides, video | `mobile/src/api.ts` |
 
 Splitting by folder means you'll rarely edit the same file, which keeps merge conflicts low.
 
@@ -231,7 +231,7 @@ gh pr create --base main --title "Short title" --body "What + how to test"
 > No `gh`? Install the [GitHub CLI](https://cli.github.com) and run `gh auth login` once, or open the PR from the link `git push` prints.
 
 ### Keep the API contract in sync
-When you add an endpoint in `backend/app/routes/`, add a typed function for it in `mobile/src/api.ts` in the **same PR**. Copy `routes/items.py` as a template. Register the router in `app/main.py`.
+When you add an endpoint in `backend/app/routes/`, add a typed function for it in `mobile/src/api.ts` in the **same PR**. Register the router in `app/main.py`.
 
 ---
 
@@ -239,11 +239,10 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 - **AI behavior / prompts:** `backend/app/llm.py` (switch providers here, nothing else changes)
 - **Spotify + live BPM sync (song tempo vs heart rate):** `backend/app/spotify.py`, `tempo.py`, `routes/spotify.py`, `mobile/src/screens/MusicScreen.tsx`. Setup in `docs/SPOTIFY.md`
 - **WHOOP history + live heart rate:** `backend/app/whoop.py`, `routes/whoop.py`, `routes/live.py`. Setup in `docs/WHOOP.md`
-- **New endpoint:** copy `backend/app/routes/items.py`
+- **New endpoint:** add a router in `backend/app/routes/` (see `live.py` for a small one)
 - **New screen:** add a file to `mobile/src/app/` (Expo Router)
 - **BPM rules (step size, cooldown, limits):** `CONTROL` in `mobile/src/engine/controller.ts`
 - **Colors and spacing:** `mobile/src/theme.ts`
-- **Need a real database?** Swap the in-memory dict in `items.py` for SQLite (SQLModel) or Supabase
 
 ## Deploying for the demo (optional)
 Running on a laptop is fine for most judging. For a public URL, deploy `backend/` to Render or Railway with start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, set `ANTHROPIC_API_KEY` there, and point `EXPO_PUBLIC_API_URL` at it.
@@ -261,4 +260,3 @@ Running on a laptop is fine for most judging. For a public URL, deploy `backend/
 - [ ] Everyone has cloned the repo and seen **Connected** on their phone
 - [ ] API key(s) obtained and shared privately (never in git)
 - [ ] Read the hackathon rules on pre-written code. Most allow boilerplate like this; mention it in your submission
-- [ ] `docs/PITCH.md` skimmed so you know what to fill in

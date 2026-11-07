@@ -4,11 +4,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import spotify as spotify_client
 from app import whoop as whoop_client
 from app.config import get_settings
-from app.routes import ai, items, live, spotify, whoop
+from app.routes import ai, live, spotify, whoop
 
 settings = get_settings()
 
-app = FastAPI(title="Hackathon API")
+app = FastAPI(title="BPM Coach API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +29,6 @@ def health() -> dict:
 
 
 app.include_router(ai.router)
-app.include_router(items.router)
 app.include_router(whoop.router)
 app.include_router(live.router)
 app.include_router(spotify.router)
