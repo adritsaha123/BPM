@@ -338,7 +338,45 @@ def play(
         body["context_uri"] = context_uri
         if offset_uri:
             body["offset"] = {"uri": offset_uri}
-    _request("PUT", "/me/player/play", body=body or None)
+    _with_device_fallback(lambda params: _request("PUT", "/me/player/play", params=params, body=body or None))
+
+
+NO_DEVICE_MESSAGE = (
+    "No active Spotify device. Open Spotify on your phone and play any song for a few seconds, "
+    "then try again (iOS disconnects Spotify when it sits paused in the background)."
+)
+
+
+def _pick_device() -> str | None:
+    """A device to target when Spotify says none is active: prefer a phone, skip restricted ones."""
+    devices = [d for d in (_request("GET", "/me/player/devices") or {}).get("devices", []) if d.get("id")]
+    usable = [d for d in devices if not d.get("is_restricted")]
+    for d in usable:
+        if d.get("is_active"):
+            return d["id"]
+    for d in usable:
+        if d.get("type") == "Smartphone":
+            return d["id"]
+    return usable[0]["id"] if usable else None
+
+
+def _with_device_fallback(call) -> None:
+    """Run a playback call; on "no active device", retry it aimed at a specific device."""
+    try:
+        call(None)
+        return
+    except SpotifyAPIError as e:
+        if "No active Spotify device" not in str(e):
+            raise
+    device_id = _pick_device()
+    if not device_id:
+        raise SpotifyAPIError(NO_DEVICE_MESSAGE, 404)
+    try:
+        call({"device_id": device_id})
+    except SpotifyAPIError as e:
+        if "No active Spotify device" in str(e):
+            raise SpotifyAPIError(NO_DEVICE_MESSAGE, 404) from e
+        raise
 
 
 def pause() -> None:
@@ -356,7 +394,9 @@ def next_track() -> None:
 def queue(uri: str) -> None:
     if mode() == "mock":
         return _mock_queue(uri)
-    _request("POST", "/me/player/queue", params={"uri": uri})
+    _with_device_fallback(
+        lambda params: _request("POST", "/me/player/queue", params={"uri": uri, **(params or {})})
+    )
 
 
 # ------------------------------------------------------------------- mock library + player

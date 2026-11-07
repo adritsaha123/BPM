@@ -289,6 +289,7 @@ def test_live_premium_and_device_errors_are_explained(connected, monkeypatch):
                     }
                 },
             ),
+            ("GET", "/me/player/devices"): (200, {"devices": []}),
         },
     )
     r = client.post("/spotify/queue", json={"uri": "spotify:track:abc"})
@@ -374,3 +375,45 @@ def test_manual_target_skips_coaching(mock_mode, default_zones):
     client.post("/live/hr", json={"bpm": 120})
     np = client.get("/spotify/now-playing", params={"zone": 3, "target_bpm": 100}).json()
     assert np["coach"] is None and np["target_bpm"] == 100
+
+
+def _fake_request(calls, devices, fail_without_device=True):
+    def fake(method, path, params=None, body=None):
+        calls.append((method, path, params))
+        if path == "/me/player/devices":
+            return {"devices": devices}
+        if fail_without_device and not (params or {}).get("device_id"):
+            raise spotify.SpotifyAPIError(
+                "No active Spotify device. Open Spotify on your phone, play any song, then try again.", 404
+            )
+        return None
+
+    return fake
+
+
+def test_play_retries_on_phone_when_no_device_active(monkeypatch):
+    monkeypatch.setattr(spotify, "mode", lambda: "live")
+    calls = []
+    devices = [
+        {"id": "speaker", "type": "Speaker", "is_active": False, "is_restricted": True},
+        {"id": "phone", "type": "Smartphone", "is_active": False, "is_restricted": False},
+    ]
+    monkeypatch.setattr(spotify, "_request", _fake_request(calls, devices))
+    spotify.play(uris=["spotify:track:x"])
+    assert calls[-1] == ("PUT", "/me/player/play", {"device_id": "phone"})
+
+
+def test_play_without_any_device_explains_fix(monkeypatch):
+    monkeypatch.setattr(spotify, "mode", lambda: "live")
+    monkeypatch.setattr(spotify, "_request", _fake_request([], []))
+    with pytest.raises(spotify.SpotifyAPIError, match="Open Spotify on your phone"):
+        spotify.play(uris=["spotify:track:x"])
+
+
+def test_queue_retries_with_device(monkeypatch):
+    monkeypatch.setattr(spotify, "mode", lambda: "live")
+    calls = []
+    devices = [{"id": "phone", "type": "Smartphone", "is_active": False, "is_restricted": False}]
+    monkeypatch.setattr(spotify, "_request", _fake_request(calls, devices))
+    spotify.queue("spotify:track:y")
+    assert calls[-1] == ("POST", "/me/player/queue", {"uri": "spotify:track:y", "device_id": "phone"})
