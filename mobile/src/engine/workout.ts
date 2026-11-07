@@ -1,4 +1,4 @@
-import { musicPlayer } from "../audio/player";
+import { music } from "../audio/music";
 import { location } from "../sources/location";
 import { mock } from "../sources/mock";
 import { pedometer } from "../sources/pedometer";
@@ -40,7 +40,13 @@ function tick() {
 
   lastChangeAt = now;
   session.setTargetBpm(decision.bpm, decision.reason);
-  musicPlayer.setBpm(decision.bpm);
+  music.setBpm(decision.bpm);
+}
+
+/** Backend errors look like `404 Not Found: {"detail":"..."}`; keep just the detail. */
+function spotifyError(e: unknown): string {
+  const m = String(e).match(/"detail":"((?:[^"\\]|\\.)*)"/);
+  return m ? m[1] : String(e).replace(/^Error: /, "");
 }
 
 export async function startWorkout(): Promise<{ warnings: string[] }> {
@@ -57,10 +63,16 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
     if (!(await location.start())) warnings.push("Location denied — no pace.");
   }
 
-  await musicPlayer.init();
   const bpm = initialBpm(useBio.getState().cadence);
   session.setTargetBpm(bpm, "start");
-  musicPlayer.start(bpm);
+  try {
+    await music.start(bpm);
+  } catch (e) {
+    // Spotify not ready (no active device, not Premium, backend down): keep the workout going.
+    warnings.push(`Spotify couldn't start (${spotifyError(e)}). Using built-in tracks instead.`);
+    session.setMusicSource("builtin");
+    await music.start(bpm);
+  }
 
   lastChangeAt = Date.now(); // give the body one cooldown period before the first nudge
   lastTick = 0;
@@ -73,7 +85,7 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
 export async function stopWorkout() {
   unsubscribe?.();
   unsubscribe = null;
-  musicPlayer.stop();
+  music.stop();
   mock.stop();
   pedometer.stop();
   await location.stop();

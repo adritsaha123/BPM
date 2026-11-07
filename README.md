@@ -52,7 +52,8 @@ Options: `-NoWhoop` / `--no-whoop` skips the band (use **Simulated** HR in the a
 2. Heart rate source: **Laptop relay**. The status turns **Live** with your bpm.
 3. Target zone: **Heart rate**, then tap a **Whoop zone** chip (Z2 or Z3 for running).
 4. Leave **Simulated running** off if you're actually moving; turn it on to test at a desk.
-5. **Start workout.** If HR is out of zone, after about 20 seconds you'll see something like `160 → 164 BPM` and hear the beat change.
+5. Music: **Built-in tracks** (smooth speed changes) or **Spotify** (real songs at the target tempo; open Spotify on the phone and play any song first. Setup: `docs/SPOTIFY.md`).
+6. **Start workout.** If HR is out of zone, after about 20 seconds you'll see something like `160 → 164 BPM` and hear the beat change.
 
 **If something's wrong:**
 | The app says | Fix |
@@ -162,10 +163,10 @@ On the iOS Simulator (no Bluetooth or GPS), turn on **Simulated heart rate** and
 | Folder | What's there |
 |---|---|
 | `runtime.ts` | `isExpoGo` flag: switches Bluetooth and background GPS off in Expo Go |
-| `app/` | Expo Router screens: `index` (setup), `workout` (live), `ai` (AI demo) |
+| `app/` | Expo Router screens: `index` (setup), `workout` (live), `music` (Spotify screen), `ai` (AI demo) |
 | `sources/` | `relayHr` (live HR via the laptop relay), `whoopBle` (live HR over phone Bluetooth, dev build), `pedometer` (cadence), `location` (pace + background), `mock` (simulated HR and/or running) |
 | `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop) |
-| `audio/` | `player.ts` (time-stretch + crossfade), `tracks.ts` (track catalog with BPMs) |
+| `audio/` | `music.ts` (picks the music source), `player.ts` (built-in tracks: time-stretch + crossfade), `tracks.ts` (track catalog with BPMs), `spotifyOutput.ts` (Spotify: songs picked by tempo) |
 | `store/` | Zustand stores: `bio` (live biometrics), `session` (zone, target BPM, log) |
 
 Demo drum loops live in `assets/music` (`npm run gen:tracks` regenerates them). To add real songs, drop the files in that folder and add them to `audio/tracks.ts` with their BPM.
@@ -236,6 +237,7 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 
 ## Where to change things
 - **AI behavior / prompts:** `backend/app/llm.py` (switch providers here, nothing else changes)
+- **Spotify + live BPM sync (song tempo vs heart rate):** `backend/app/spotify.py`, `tempo.py`, `routes/spotify.py`, `mobile/src/screens/MusicScreen.tsx`. Setup in `docs/SPOTIFY.md`
 - **WHOOP history + live heart rate:** `backend/app/whoop.py`, `routes/whoop.py`, `routes/live.py`. Setup in `docs/WHOOP.md`
 - **New endpoint:** copy `backend/app/routes/items.py`
 - **New screen:** add a file to `mobile/src/app/` (Expo Router)
