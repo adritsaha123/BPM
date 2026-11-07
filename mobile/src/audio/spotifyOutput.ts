@@ -16,7 +16,7 @@ import { useSession } from "../store/session";
  */
 const POLL_MS = 3000;
 const QUEUE_LEAD_MS = 20_000; // queue the next match when this much of the song is left
-const SWITCH_NOW_DIFF_BPM = 10; // current song this far off the target → switch immediately
+const SWITCH_NOW_DIFF_BPM = 6; // current song this far off the target → switch immediately
 const MIN_SWITCH_GAP_MS = 45_000; // never cut songs more often than this
 const START_CHECK_MS = 3000; // after starting, confirm Spotify is really playing
 

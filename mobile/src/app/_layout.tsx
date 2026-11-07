@@ -17,7 +17,6 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ title: "BPM Coach" }} />
         <Stack.Screen name="workout" options={{ title: "Workout", gestureEnabled: false, headerBackVisible: false }} />
-        <Stack.Screen name="ai" options={{ title: "AI Demo" }} />
         <Stack.Screen name="music" options={{ title: "Spotify" }} />
       </Stack>
       <StatusBar style="dark" />

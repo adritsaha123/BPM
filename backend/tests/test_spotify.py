@@ -323,13 +323,32 @@ def default_zones(monkeypatch):
     monkeypatch.setattr(spotify_routes.whoop, "summary", not_connected)
 
 
-def test_coach_target_leads_one_step_toward_the_zone():
-    assert tempo.coach_target(120, 133, 152) == {"target_bpm": 128, "direction": "push"}
-    assert tempo.coach_target(138, 140, 152)["target_bpm"] == 146  # capped at zone middle
-    assert tempo.coach_target(130, 133, 152)["target_bpm"] == 138
-    assert tempo.coach_target(170, 133, 152) == {"target_bpm": 162, "direction": "ease"}
-    assert tempo.coach_target(155, 133, 152)["target_bpm"] == 147
-    assert tempo.coach_target(140, 133, 152) == {"target_bpm": 140, "direction": "hold"}
+def test_coach_steps_from_the_current_song_in_running_tempo():
+    # nothing playing: start from an easy running cadence (160)
+    assert tempo.coach_target(120, 133, 152) == {"target_bpm": 168, "direction": "push", "from_bpm": 160}
+    # one step (8) from the current song toward the zone, or the same tempo inside it
+    assert tempo.coach_target(120, 133, 152, song_bpm=164)["target_bpm"] == 172
+    assert tempo.coach_target(170, 133, 152, song_bpm=170)["target_bpm"] == 162
+    assert tempo.coach_target(140, 133, 152, song_bpm=165)["target_bpm"] == 165
+    assert tempo.coach_target(140, 133, 152, song_bpm=165)["direction"] == "hold"
+    # half-time songs count at running cadence: 82 BPM runs at 164
+    assert tempo.coach_target(120, 133, 152, song_bpm=82)["from_bpm"] == 164
+    # never outside 150-185, even when the heart rate is far from the zone or the song is slow
+    assert tempo.coach_target(120, 133, 152, song_bpm=182)["target_bpm"] == 185
+    assert tempo.coach_target(175, 133, 152, song_bpm=152)["target_bpm"] == 150
+    assert tempo.coach_target(75, 158, 172, song_bpm=128)["target_bpm"] == 158  # resting HR: no 80 BPM songs
+
+
+def test_running_tempo_folds_half_and_double_time():
+    assert tempo.running_tempo(85) == 170 and tempo.running_tempo(160) == 160
+    assert tempo.running_tempo(340) == 170 and tempo.running_tempo(128) == 128  # nothing fits: keep it
+
+
+def test_half_or_double_time_ranks_just_below_real_tempo():
+    real = tempo.fit_score({"diff_bpm": 0.0, "multiple": 1.0}, 0.8, "push")
+    doubled = tempo.fit_score({"diff_bpm": 0.0, "multiple": 2.0}, 0.8, "push")
+    assert doubled == real + tempo.HALF_DOUBLE_PENALTY
+    assert tempo.fit_score({"diff_bpm": 0.0, "multiple": 2.0}, None, None) == 0  # tempo-only: no penalty
 
 
 def test_zones_default_and_from_whoop(mock_mode, default_zones, monkeypatch):
@@ -347,28 +366,28 @@ def test_zones_default_and_from_whoop(mock_mode, default_zones, monkeypatch):
 def test_now_playing_coach_pushes_when_heart_rate_is_low(mock_mode, default_zones):
     client.post("/live/hr", json={"bpm": 120})
     np = client.get("/spotify/now-playing", params={"zone": 3}).json()
-    assert np["current_bpm"] == 120 and np["target_bpm"] == 128
+    # Heartline (128 BPM) is playing: below running range, so the coach starts at 150 and pushes to 158
+    assert np["current_bpm"] == 120 and np["target_bpm"] == 158
     assert np["coach"]["direction"] == "push" and np["coach"]["zone_min"] == 133
-    assert np["match"]["target_bpm"] == 128  # Heartline (128) is exactly the push target
-    assert np["match"]["status"] == "in_sync"
+    assert np["coach"]["from_bpm"] == 150
     plain = client.get("/spotify/now-playing").json()
     assert plain["coach"] is None and plain["target_bpm"] == 120
 
 
 def test_coach_with_simulated_heart_rate_and_hold(mock_mode, default_zones):
     np = client.get("/spotify/now-playing", params={"zone": 3, "fallback_bpm": 140}).json()
-    assert (
-        np["target_source"] == "fallback" and np["coach"]["direction"] == "hold" and np["target_bpm"] == 140
-    )
+    assert np["target_source"] == "fallback" and np["coach"]["direction"] == "hold"
+    assert np["target_bpm"] == 150  # holds the current song's tempo, lifted into running range
 
 
 def test_sync_eases_off_when_heart_rate_is_high(mock_mode, default_zones):
     client.post("/live/hr", json={"bpm": 170})
     r = client.post("/spotify/sync", json={"zone": 3, "play_now": True}).json()
-    assert r["coach"]["direction"] == "ease" and r["target_bpm"] == 162
-    assert abs(r["track"]["match"]["effective_bpm"] - 162) <= 3
+    # easing off from Heartline (150 in running range) can't go below 150
+    assert r["coach"]["direction"] == "ease" and r["target_bpm"] == 150
+    assert abs(r["track"]["match"]["effective_bpm"] - 150) <= 3
     ranked = client.get("/spotify/match", params={"zone": 3}).json()
-    assert ranked["coach"]["direction"] == "ease" and ranked["target_bpm"] == 162
+    assert ranked["coach"]["direction"] == "ease" and 150 <= ranked["target_bpm"] <= 185
 
 
 def test_manual_target_skips_coaching(mock_mode, default_zones):

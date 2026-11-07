@@ -107,24 +107,46 @@ def get_tempo(track_id: str) -> float | None:
     return get_tempos([track_id]).get(track_id)
 
 
-COACH_STEP_BPM = 8  # how far above/below the current heart rate the music leads
+# Coach mode works in running tempo: runners fall into step with the beat, and heart rate follows
+# cadence. So the music steps from the current song's tempo toward the zone, one song at a time.
+RUN_MIN_BPM = 150  # slower than this stops feeling like running music
+RUN_MAX_BPM = 185
+RUN_START_BPM = 160  # nothing playing yet: an easy running cadence
+COACH_STEP_BPM = 8  # per song: Spotify changes tempo song by song, so smaller steps get lost
 
 
-def coach_target(current_bpm: float, zone_min: float, zone_max: float, step: float = COACH_STEP_BPM) -> dict:
-    """Coach mode: pick the music tempo that nudges the heart rate toward a training zone.
+def running_tempo(song_bpm: float) -> float:
+    """A song's tempo as a running cadence: halve or double it into 150-185 if that fits better
+    (an 85 BPM song runs at 170), else the closest of the three."""
 
-    Below the zone the music leads a step faster than the heart rate (never past the zone's
-    middle); above it, a step slower; inside it, the music simply matches the heart rate.
-    One step at a time, because big tempo jumps feel jarring and are hard to follow.
+    def outside(b: float) -> float:
+        return max(RUN_MIN_BPM - b, 0, b - RUN_MAX_BPM)
+
+    return min((song_bpm, song_bpm * 2, song_bpm / 2), key=outside)
+
+
+def coach_target(
+    current_hr: float,
+    zone_min: float,
+    zone_max: float,
+    song_bpm: float | None = None,
+    step: float = COACH_STEP_BPM,
+) -> dict:
+    """Coach mode: the music tempo that nudges the heart rate toward a training zone.
+
+    Start from the current song's tempo (as a running cadence) and move one step: faster when the
+    heart rate is below the zone, slower above it, the same inside it. Always within 150-185.
     """
-    mid = (zone_min + zone_max) / 2
-    if current_bpm < zone_min:
-        target, direction = min(current_bpm + step, mid), "push"
-    elif current_bpm > zone_max:
-        target, direction = max(current_bpm - step, mid), "ease"
+    base = running_tempo(song_bpm) if song_bpm else RUN_START_BPM
+    base = min(max(base, RUN_MIN_BPM), RUN_MAX_BPM)
+    if current_hr < zone_min:
+        target, direction = base + step, "push"
+    elif current_hr > zone_max:
+        target, direction = base - step, "ease"
     else:
-        target, direction = current_bpm, "hold"
-    return {"target_bpm": round(target, 1), "direction": direction}
+        target, direction = base, "hold"
+    target = min(max(target, RUN_MIN_BPM), RUN_MAX_BPM)
+    return {"target_bpm": round(target, 1), "direction": direction, "from_bpm": round(base, 1)}
 
 
 def match(song_bpm: float | None, target_bpm: float | None) -> dict | None:
@@ -154,6 +176,7 @@ def match(song_bpm: float | None, target_bpm: float | None) -> dict | None:
 INTENSITY_ENERGY = {"push": 0.8, "hold": 0.65, "ease": 0.4}
 ENERGY_WEIGHT = 10  # 0.1 of energy off the goal counts like being 1 BPM off
 UNKNOWN_ENERGY_PENALTY = 0.2  # songs with no energy data rank as if 0.2 off
+HALF_DOUBLE_PENALTY = 2  # BPM-equivalent cost of matching at half or double time
 
 
 def fit_score(match_info: dict | None, energy: float | None, intensity: str | None) -> float | None:
@@ -170,6 +193,8 @@ def fit_score(match_info: dict | None, energy: float | None, intensity: str | No
     score = abs(diff)
     if (intensity == "push" and diff < 0) or (intensity == "ease" and diff > 0):
         score += abs(diff)
+    if intensity and match_info.get("multiple", 1) != 1:
+        score += HALF_DOUBLE_PENALTY  # a half/double-time fit works, a song at the real tempo drives better
     want = INTENSITY_ENERGY.get(intensity or "")
     if want is not None:
         off = abs(energy - want) if energy is not None else UNKNOWN_ENERGY_PENALTY

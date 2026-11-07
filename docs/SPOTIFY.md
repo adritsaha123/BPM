@@ -3,18 +3,21 @@
 The Spotify screen (setup → **Spotify music screen →**) shows your **live heart rate next to the current song's tempo**, colors it
 (green = in sync, amber = close, red = off), and picks songs from your library by tempo.
 
-**Coach mode** (on by default, Zone 3) uses the music to steer you into a heart rate zone:
+**Coach mode** (on by default, Zone 3) uses the music to steer you into a heart rate zone. It works
+in **running tempo (150–185 BPM)**: runners fall into step with the beat, and heart rate follows
+cadence. From the current song's tempo, the next song is one step (8 BPM) away:
 
-| Your heart rate | Music aims for | Banner |
+| Your heart rate | Next song aims for | Banner |
 |---|---|---|
-| Below the zone | a step (8 BPM) **faster** than your heart rate, never past the zone's middle | ↑ push you up |
-| In the zone | your heart rate | ✓ in your zone |
-| Above the zone | a step **slower** than your heart rate, never below the zone's middle | ↓ ease you off |
+| Below the zone | 8 BPM **faster** than the current song | ↑ push you up |
+| In the zone | the current song's tempo | ✓ in your zone |
+| Above the zone | 8 BPM **slower** than the current song | ↓ ease you off |
 
-Example, Zone 3 = 133–152: heart rate 120 → songs around 128; 170 → around 162; 140 → 140.
-It moves one step at a time because big tempo jumps feel jarring, and it keeps re-aiming as your
-heart rate changes. Music doesn't change heart rate directly: faster music tends to make you pick
-up the pace, and the pace moves the heart rate. Pick **Off** to just match your heart rate.
+Example, Zone 3 = 133–152, current song 164 BPM: heart rate 120 → next song ~172; 170 → ~156;
+140 → ~164. Nothing playing yet → it starts from 160. Half- and double-time songs count at running
+cadence (an 82 BPM song runs at 164) but rank just below songs at the real tempo. The target never
+leaves 150–185, so a resting heart rate doesn't pull in slow songs. Pick **Off** to just match your
+heart rate.
 
 Zones come from WHOOP (`/whoop/summary`: heart rate reserve from your max and resting HR). If WHOOP
 isn't connected, they're estimated from a 190 max heart rate, and the screen says so.
@@ -33,10 +36,11 @@ songs from 72 to 182 BPM that advance in real time), so the screen works without
 
 On the setup screen, **Music → Spotify** makes the workout loop play Spotify instead of the built-in tracks.
 The phone's controller (`mobile/src/engine/controller.ts`) still decides the target BPM from your zone
-(cadence-based, small steps, cooldown); `mobile/src/audio/spotifyOutput.ts` turns that into songs:
+(cadence-based; for Spotify `SPOTIFY_CONTROL`: 8 BPM steps, at most one a minute, 150–185, because
+tempo only changes when the song does); `mobile/src/audio/spotifyOutput.ts` turns that into songs:
 
 - **Start:** plays the best match for the starting BPM (`POST /spotify/sync` with `target_bpm`, `play_now: true`).
-- **Target changes:** if the current song is 10+ BPM off the new target, switches now (at most once every 45 s);
+- **Target changes:** if the current song is 6+ BPM off the new target, switches now (at most once every 45 s);
   otherwise the next song uses the new target.
 - **Near the end of each song:** queues the best match for the current target (Auto-DJ).
 - **Song energy follows the coaching:** heart rate below the zone → fast *and* high-energy songs;
@@ -47,7 +51,7 @@ The phone's controller (`mobile/src/engine/controller.ts`) still decides the tar
 - If Spotify can't play (no active device, no Premium, backend down), the workout falls back to the built-in
   tracks and says why.
 
-The Spotify screen's own coach mode (heart rate ± 8 BPM) is separate and still works on its own.
+The Spotify screen's own coach mode (steps from the current song, `tempo.coach_target`) is separate and still works on its own.
 
 ## Can we speed songs up to match the heart rate?
 

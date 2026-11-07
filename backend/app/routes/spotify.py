@@ -13,8 +13,9 @@ Which tempo the music aims for:
 - ?target_bpm= given: exactly that (manual override).
 - Otherwise start from the current heart rate: live from /live/hr (a reading in the last 15 s),
   else ?fallback_bpm= (the app's "simulate heart rate" stepper).
-- ?zone=1..5 turns on coach mode: below the zone the music leads a step faster, above it a step
-  slower, inside it the music matches the heart rate (tempo.coach_target). Zones come from WHOOP
+- ?zone=1..5 turns on coach mode, in running tempo (150-185): from the current song's tempo, the
+  next song is a step faster when the heart rate is below the zone, a step slower above it, the same
+  inside it (tempo.coach_target). Zones come from WHOOP
   (/whoop/summary), or an estimate from a 190 max heart rate if WHOOP isn't connected.
 
 Which songs win: closest tempo, plus energy when there's an intensity (?intensity=push|hold|ease,
@@ -99,7 +100,17 @@ def hr_zones() -> dict:
     return result
 
 
-def _resolve(target_bpm: float | None, fallback_bpm: float | None, zone: int | None = None) -> dict:
+def _song_tempo(playback: dict | None) -> float | None:
+    track = (playback or {}).get("track")
+    return tempo.get_tempo(track["id"]) if track else None
+
+
+def _resolve(
+    target_bpm: float | None,
+    fallback_bpm: float | None,
+    zone: int | None = None,
+    song_bpm: float | None = None,
+) -> dict:
     """Work out the current heart rate and the tempo the music should aim for."""
     hr = _heart_rate()
     if target_bpm:
@@ -116,7 +127,7 @@ def _resolve(target_bpm: float | None, fallback_bpm: float | None, zone: int | N
     if zone:
         z = next((z for z in hr_zones()["zones"] if z["zone"] == zone), None)
         if z:
-            step = tempo.coach_target(current, z["min_bpm"], z["max_bpm"])
+            step = tempo.coach_target(current, z["min_bpm"], z["max_bpm"], song_bpm)
             target = step["target_bpm"]
             coach = {
                 "zone": zone,
@@ -258,11 +269,11 @@ def now_playing(
 ) -> dict:
     """Current song + its tempo + heart rate + coach target + how well they match. Poll every 1-2 s."""
     playback = _call(spotify.current_playback)
-    r = _resolve(target_bpm, fallback_bpm, zone)
     track = playback.get("track") if playback else None
     if track:
         f = tempo.get_features([track["id"]]).get(track["id"]) or {}
         track = {**track, "tempo": f.get("tempo"), "energy": f.get("energy")}
+    r = _resolve(target_bpm, fallback_bpm, zone, track["tempo"] if track else None)
     return {
         "mode": spotify.mode(),
         "is_playing": bool(playback and playback["is_playing"]),
@@ -287,7 +298,8 @@ def match(
     limit: int = Query(10, ge=1, le=50),
 ) -> dict:
     """Songs from a playlist ranked by tempo closeness to the target BPM (and energy, with an intensity)."""
-    r = _resolve(target_bpm, fallback_bpm, zone)
+    song_bpm = _song_tempo(_call(spotify.current_playback)) if zone and not target_bpm else None
+    r = _resolve(target_bpm, fallback_bpm, zone, song_bpm)
     level = _intensity(intensity, r["coach"])
     base = {
         "target_bpm": r["target"],
@@ -315,14 +327,14 @@ class SyncIn(BaseModel):
 def sync(body: SyncIn) -> dict:
     """Pick the song that best fits the target (heart rate, or coach target with a zone) and queue
     it, or play it now."""
-    r = _resolve(body.target_bpm, body.fallback_bpm, body.zone)
+    playback = _call(spotify.current_playback)
+    r = _resolve(body.target_bpm, body.fallback_bpm, body.zone, _song_tempo(playback))
     target, source = r["target"], r["source"]
     if target is None:
         raise HTTPException(
             status_code=400,
-            detail="No live heart rate. Start scripts/whoop_live_hr.py, or send target_bpm / fallback_bpm.",
+            detail="No live heart rate. Connect the Whoop, or send target_bpm / fallback_bpm.",
         )
-    playback = _call(spotify.current_playback)
     current_id = ((playback or {}).get("track") or {}).get("id")
     level = _intensity(body.intensity, r["coach"])
     ranked, _ = _ranked(body.playlist_id, target, level)

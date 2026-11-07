@@ -6,7 +6,7 @@ import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { isHrFresh, useBio } from "../store/bio";
 import { useSession } from "../store/session";
-import { decide, initialBpm, zoneError } from "./controller";
+import { CONTROL, SPOTIFY_CONTROL, decide, initialBpm, zoneError } from "./controller";
 
 /**
  * The core loop, outside React so it keeps running with the screen locked:
@@ -14,6 +14,9 @@ import { decide, initialBpm, zoneError } from "./controller";
  * Driven by sensor events (not timers), throttled to one decision per second.
  */
 const TICK_MS = 1000;
+
+/** Spotify switches whole songs, so it gets bigger, slower steps in running tempo (controller.ts). */
+const control = () => (useSession.getState().musicSource === "spotify" ? SPOTIFY_CONTROL : CONTROL);
 
 let unsubscribe: (() => void) | null = null;
 let lastTick = 0;
@@ -37,10 +40,10 @@ function tick() {
     lastChangeAt,
   };
   // Song energy follows where we are vs the zone (Spotify picks high-energy songs to push you up).
-  const err = zoneError(input);
+  const err = zoneError(input, control());
   if (err != null) music.setIntensity(err > 0 ? "push" : err < 0 ? "ease" : "hold");
 
-  const decision = decide(input);
+  const decision = decide(input, control());
   if (!decision) return;
 
   lastChangeAt = now;
@@ -68,7 +71,7 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
     if (!(await location.start())) warnings.push("Location denied — no pace.");
   }
 
-  const bpm = initialBpm(useBio.getState().cadence);
+  const bpm = initialBpm(useBio.getState().cadence, control());
   session.setTargetBpm(bpm, "start");
   try {
     await music.start(bpm);
