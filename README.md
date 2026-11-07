@@ -17,6 +17,53 @@ The app never calls the AI or third-party APIs directly. Everything goes through
 
 ---
 
+## ▶ Run everything
+
+**Before you start:** iPhone and laptop on the **same Wi-Fi** (or the phone's hotspot), **Expo Go** installed on the iPhone, Whoop band on. Needs [Node 22+](https://nodejs.org) and [Python 3.11+](https://python.org).
+
+**1. In the Whoop app:** Device Settings → **Heart Rate Broadcast** → **Start** (band light flashes blue). Keep the band within a few meters of the laptop.
+
+**2. One command from the repo root:**
+
+```powershell
+.\dev.ps1                 # Windows (PowerShell)
+```
+```bash
+./dev.sh                  # macOS / Linux
+```
+
+It does first-time setup automatically (Python virtualenv, packages, `backend/.env`, `npm install`), then starts:
+
+| Process | What it does | You should see |
+|---|---|---|
+| Backend | FastAPI on port 8000 | `Uvicorn running on http://0.0.0.0:8000` |
+| Whoop live HR | Reads the band over Bluetooth, sends bpm to the backend | `142 bpm` about once a second |
+| Expo | Serves the app | A QR code |
+
+On Windows each one opens in its own window; on macOS/Linux they share one terminal and Ctrl+C stops all of them.
+Options: `-NoWhoop` / `--no-whoop` skips the band (use **Simulated** HR in the app). `-Tunnel` / `--tunnel` helps when venue Wi-Fi blocks the phone.
+
+**3. First time only, connect your Whoop account:** put `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `backend/.env` (ask the team; never commit them), then open **http://localhost:8000/whoop/login** in a browser **on the laptop** and approve. http://localhost:8000/whoop/status should then say `"mode": "live"`. Skip this and the app still works, with sample Whoop zones.
+
+**4. On the iPhone:** scan the QR code with the **Camera** app, which opens Expo Go. Then:
+1. Allow **Motion & Fitness** and **Location**.
+2. Heart rate source: **Laptop relay**. The status turns **Live** with your bpm.
+3. Target zone: **Heart rate**, then tap a **Whoop zone** chip (Z2 or Z3 for running).
+4. Leave **Simulated running** off if you're actually moving; turn it on to test at a desk.
+5. **Start workout.** If HR is out of zone, after about 20 seconds you'll see something like `160 → 164 BPM` and hear the beat change.
+
+**If something's wrong:**
+| The app says | Fix |
+|---|---|
+| Can't reach the backend | Is the backend running? Same Wi-Fi? On Windows, allow Python through the firewall on private networks. |
+| Waiting for the laptop script | The Whoop HR process hasn't found the band. Restart Heart Rate Broadcast and move the band closer. |
+| Stream went stale | Band out of range, or the Whoop HR process stopped. Check its output. |
+| Zone chips say "sample data" | Do step 3, then reload the app (shake the phone → Reload). |
+
+Prefer running the pieces by hand? The commands are in **Quick start** below and in `docs/WHOOP.md`.
+
+---
+
 ## Quick start (everyone, before the hackathon)
 
 **Install once:** [Node 22+](https://nodejs.org), [Python 3.11+](https://python.org), Git, an iPhone, and an Expo account (`npx eas-cli@latest login`) for development builds.
