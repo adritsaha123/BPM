@@ -17,6 +17,7 @@ let active: { player: AudioPlayer; track: Track } | null = null;
 let fading: ReturnType<typeof setInterval> | null = null;
 let fadingOut: AudioPlayer | null = null;
 let volume = 1;
+let paused = false;
 
 function makePlayer(track: Track, rate: number): AudioPlayer {
   const p = createAudioPlayer(track.source);
@@ -60,7 +61,28 @@ export const musicPlayer = {
       publish();
       return;
     }
+    if (paused) {
+      // swap tracks silently; resume() starts the new one
+      const track = bestTrackFor(bpm);
+      finishFade();
+      active.player.remove();
+      active = { player: makePlayer(track, clampRate(rateFor(bpm, track))), track };
+      active.player.volume = volume;
+      publish();
+      return;
+    }
     crossfadeTo(bestTrackFor(bpm), bpm);
+  },
+
+  pause() {
+    paused = true;
+    finishFade();
+    active?.player.pause();
+  },
+
+  resume() {
+    paused = false;
+    active?.player.play();
   },
 
   setVolume(v: number) {
@@ -69,6 +91,7 @@ export const musicPlayer = {
   },
 
   stop() {
+    paused = false;
     finishFade();
     active?.player.pause();
     active?.player.remove();

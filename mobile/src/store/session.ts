@@ -35,6 +35,7 @@ type SessionState = {
   targetBpm: number;
   trackTitle: string | null;
   playbackRate: number;
+  musicPaused: boolean;
   adjustments: Adjustment[];
 
   setMode: (m: ZoneMode) => void;
@@ -45,6 +46,7 @@ type SessionState = {
   setRunning: (running: boolean) => void;
   setTargetBpm: (bpm: number, reason: string) => void;
   setNowPlaying: (title: string, rate: number) => void;
+  setMusicPaused: (paused: boolean) => void;
 };
 
 export const useSession = create<SessionState>()((set, get) => ({
@@ -60,6 +62,7 @@ export const useSession = create<SessionState>()((set, get) => ({
   targetBpm: 160,
   trackTitle: null,
   playbackRate: 1,
+  musicPaused: false,
   adjustments: [],
 
   setMode: (mode) => set({ mode }),
@@ -85,4 +88,5 @@ export const useSession = create<SessionState>()((set, get) => ({
     });
   },
   setNowPlaying: (trackTitle, playbackRate) => set({ trackTitle, playbackRate }),
+  setMusicPaused: (musicPaused) => set({ musicPaused }),
 }));

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Button, Card } from "../components/ui";
+import { music } from "../audio/music";
 import { formatPace } from "../engine/controller";
 import { stopWorkout } from "../engine/workout";
 import { isHrFresh, useBio } from "../store/bio";
@@ -94,6 +95,22 @@ function MusicCard() {
   const title = useSession((s) => s.trackTitle);
   const rate = useSession((s) => s.playbackRate);
   const source = useSession((s) => s.musicSource);
+  const paused = useSession((s) => s.musicPaused);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle() {
+    setBusy(true);
+    setError(null);
+    try {
+      await (paused ? music.resume() : music.pause());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <Card title={source === "spotify" ? "Music · Spotify" : source === "dj" ? "Music · DJ" : "Music"}>
       <View style={styles.musicRow}>
@@ -102,8 +119,10 @@ function MusicCard() {
       </View>
       <Text style={styles.sub}>
         {title ?? "—"}
-        {source === "spotify" ? " · Spotify" : ` · ${rate.toFixed(2)}×`}
+        {paused ? " · paused" : source === "spotify" ? " · Spotify" : ` · ${rate.toFixed(2)}×`}
       </Text>
+      <Button label={paused ? "Resume music" : "Pause music"} variant="secondary" disabled={busy} onPress={toggle} />
+      {error && <Text style={[styles.sub, { color: colors.error }]}>{error}</Text>}
     </Card>
   );
 }

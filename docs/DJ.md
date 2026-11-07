@@ -10,6 +10,8 @@ itself, so it can do what a DJ app does:
   for it blends into a better match over 3 s.
 - **Blend into the next song** over 8 s, 12 s before the current one ends. The next pick is chosen
   by tempo and by energy toward your zone (push = high energy, ease = calm), like Spotify mode.
+- **No choppy switches**: the next song is loaded ~40 s ahead, the blend only starts once it is
+  actually playing, and volumes move every 50 ms on an equal-power curve (no loudness dip).
 - Works in **Expo Go** (it just streams MP3s).
 
 On the setup screen: **Music → DJ**. The workout uses `DJ_CONTROL` in

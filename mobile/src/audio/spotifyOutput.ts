@@ -12,6 +12,8 @@ import { useSession } from "../store/session";
  *  - near the end of each song: queue the best match for the current target (Auto-DJ)
  *  - song energy follows the coaching direction: below the zone → high-energy songs,
  *    above it → calmer ones (setIntensity, fed by the workout loop)
+ *  - pause/resume: pauses Spotify itself; while paused no songs are queued or switched, and a
+ *    tempo change that needs a new song plays it on resume. Resuming from the Spotify app counts too.
  * Needs Spotify open and playing on some device; with no Spotify keys the backend's mock player is used.
  */
 const POLL_MS = 3000;
@@ -26,6 +28,8 @@ let lastSwitchAt = 0;
 let queuedForTrackId: string | null = null;
 let current: NowPlaying["track"] = null;
 let intensity: Intensity = "hold";
+let paused = false;
+let switchOnResume = false; // the target moved far from the paused song
 
 /** Song tempo, doubled or halved: whichever is closest to the target (85 BPM fits 170). */
 export function effectiveBpm(songBpm: number, targetBpm: number): number {
@@ -51,6 +55,13 @@ async function playBestNow() {
 async function tick() {
   try {
     const np = await api.nowPlaying();
+    if (paused) {
+      // resumed from the Spotify app / lock screen: pick up again here too
+      if (np.is_playing) {
+        paused = false;
+        useSession.getState().setMusicPaused(false);
+      } else return;
+    }
     const track = np.track;
     if (!track) return;
     if (track.id !== current?.id) queuedForTrackId = null;
@@ -90,7 +101,10 @@ export const spotifyOutput = {
     target = bpm;
     if (!current?.tempo) return;
     const off = Math.abs(effectiveBpm(current.tempo, bpm) - bpm);
-    if (off >= SWITCH_NOW_DIFF_BPM && Date.now() - lastSwitchAt > MIN_SWITCH_GAP_MS) {
+    if (off >= SWITCH_NOW_DIFF_BPM && paused) {
+      switchOnResume = true;
+      publish(current);
+    } else if (off >= SWITCH_NOW_DIFF_BPM && Date.now() - lastSwitchAt > MIN_SWITCH_GAP_MS) {
       playBestNow().catch(() => {});
     } else {
       publish(current); // refresh the shown BPM; the next queued song uses the new target
@@ -102,7 +116,22 @@ export const spotifyOutput = {
     intensity = next;
   },
 
+  async pause() {
+    await api.spotifyPause();
+    paused = true;
+  },
+
+  /** Resumes the paused song, or plays a better match if the target moved far while paused. */
+  async resume() {
+    if (switchOnResume) await playBestNow();
+    else await api.spotifyPlay();
+    switchOnResume = false;
+    paused = false;
+  },
+
   stop() {
+    paused = false;
+    switchOnResume = false;
     if (poll) clearInterval(poll);
     poll = null;
     if (current) api.spotifyPause().catch(() => {});

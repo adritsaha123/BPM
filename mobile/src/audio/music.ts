@@ -14,6 +14,7 @@ const source = () => useSession.getState().musicSource;
 
 export const music = {
   async start(bpm: number) {
+    useSession.getState().setMusicPaused(false);
     if (source() === "spotify") return spotifyOutput.start(bpm);
     await musicPlayer.init(); // audio session (plays in silent mode, keeps running when locked)
     if (source() === "dj") return djOutput.start(bpm);
@@ -32,7 +33,24 @@ export const music = {
     if (source() === "dj") djOutput.setIntensity(intensity);
   },
 
+  /** Pause the music; the workout and coach keep running, so resume() plays at the current target.
+   *  Spotify goes through the backend, so it can fail (e.g. Spotify closed): that throws. */
+  async pause() {
+    if (source() === "spotify") await spotifyOutput.pause();
+    else if (source() === "dj") djOutput.pause();
+    else musicPlayer.pause();
+    useSession.getState().setMusicPaused(true);
+  },
+
+  async resume() {
+    if (source() === "spotify") await spotifyOutput.resume();
+    else if (source() === "dj") djOutput.resume();
+    else musicPlayer.resume();
+    useSession.getState().setMusicPaused(false);
+  },
+
   stop() {
+    useSession.getState().setMusicPaused(false);
     spotifyOutput.stop();
     djOutput.stop();
     musicPlayer.stop();
