@@ -335,6 +335,7 @@ export default function SetupScreen() {
           options={[
             { value: "builtin", label: "Built-in tracks" },
             { value: "spotify", label: "Spotify" },
+            { value: "dj", label: "DJ" },
           ]}
           value={musicSource}
           onChange={setMusicSource}
@@ -342,7 +343,9 @@ export default function SetupScreen() {
         <Text style={styles.help}>
           {musicSource === "builtin"
             ? "Smoothly speeds the beat up or down to the exact BPM."
-            : `Plays songs from your Liked Songs at the target tempo, switching song by song. ${
+            : musicSource === "dj"
+              ? "Real songs from Jamendo (Creative Commons), each locked to the exact BPM and blended into the next like a DJ. Artist and license are shown while playing."
+              : `Plays songs from your Liked Songs at the target tempo, switching song by song. ${
                 spotifyShared ? "Using the laptop's shared Spotify login." : SPOTIFY_MODE_TEXT[spotifyMode ?? "loading"]
               }`}
         </Text>

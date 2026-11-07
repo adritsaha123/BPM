@@ -16,7 +16,7 @@ export type Zone = { min: number; max: number };
 export type HrSource = "laptop" | "phone" | "sim";
 
 /** Where the music comes from: bundled tracks (smooth tempo shifts) or Spotify (real songs by tempo). */
-export type MusicSource = "builtin" | "spotify";
+export type MusicSource = "builtin" | "spotify" | "dj";
 
 export type Adjustment = { at: number; from: number; to: number; reason: string };
 

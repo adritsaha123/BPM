@@ -238,6 +238,7 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 ## Where to change things
 - **AI behavior / prompts:** `backend/app/llm.py` (switch providers here, nothing else changes)
 - **Spotify + live BPM sync (song tempo vs heart rate):** `backend/app/spotify.py`, `tempo.py`, `routes/spotify.py`, `mobile/src/screens/MusicScreen.tsx`. Setup in `docs/SPOTIFY.md`
+- **DJ mode (open-license songs at the exact BPM, crossfades):** `backend/app/dj.py`, `routes/dj.py`, `scripts/build_dj_catalog.py`, `mobile/src/audio/djOutput.ts`. Details in `docs/DJ.md`
 - **WHOOP history + live heart rate:** `backend/app/whoop.py`, `routes/whoop.py`, `routes/live.py`. Setup in `docs/WHOOP.md`
 - **New endpoint:** add a router in `backend/app/routes/` (see `live.py` for a small one)
 - **New screen:** add a file to `mobile/src/app/` (Expo Router)

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import spotify as spotify_client
 from app import whoop as whoop_client
 from app.config import get_settings
-from app.routes import ai, live, spotify, whoop
+from app.routes import ai, dj, live, spotify, whoop
 
 settings = get_settings()
 
@@ -32,3 +32,4 @@ app.include_router(ai.router)
 app.include_router(whoop.router)
 app.include_router(live.router)
 app.include_router(spotify.router)
+app.include_router(dj.router)

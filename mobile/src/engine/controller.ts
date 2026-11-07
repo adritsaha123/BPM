@@ -18,6 +18,15 @@ export const CONTROL: Control = {
   deadband: 2, // ignore readings this close to the zone edge (bpm or sec/km)
 };
 
+/** DJ mode: songs are time-stretched like the built-in tracks (smooth), kept in running tempo. */
+export const DJ_CONTROL: Control = {
+  minBpm: 145,
+  maxBpm: 185,
+  step: 4,
+  cooldownMs: 20_000,
+  deadband: 2,
+};
+
 /**
  * Spotify: tempo only changes when the song does, so a 4 BPM nudge usually waits for the next song
  * and gets lost. Bigger, less frequent steps, kept in running tempo (no slow songs).

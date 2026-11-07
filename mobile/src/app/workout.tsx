@@ -95,14 +95,14 @@ function MusicCard() {
   const rate = useSession((s) => s.playbackRate);
   const source = useSession((s) => s.musicSource);
   return (
-    <Card title={source === "spotify" ? "Music · Spotify" : "Music"}>
+    <Card title={source === "spotify" ? "Music · Spotify" : source === "dj" ? "Music · DJ" : "Music"}>
       <View style={styles.musicRow}>
         <Text style={styles.medium}>{bpm}</Text>
         <Text style={styles.unit}> BPM target</Text>
       </View>
       <Text style={styles.sub}>
         {title ?? "—"}
-        {source === "builtin" ? ` · ${rate.toFixed(2)}×` : " · Spotify"}
+        {source === "spotify" ? " · Spotify" : ` · ${rate.toFixed(2)}×`}
       </Text>
     </Card>
   );

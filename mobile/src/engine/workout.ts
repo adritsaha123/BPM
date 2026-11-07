@@ -6,7 +6,7 @@ import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { isHrFresh, useBio } from "../store/bio";
 import { useSession } from "../store/session";
-import { CONTROL, SPOTIFY_CONTROL, decide, initialBpm, zoneError } from "./controller";
+import { CONTROL, DJ_CONTROL, SPOTIFY_CONTROL, decide, initialBpm, zoneError } from "./controller";
 
 /**
  * The core loop, outside React so it keeps running with the screen locked:
@@ -15,8 +15,9 @@ import { CONTROL, SPOTIFY_CONTROL, decide, initialBpm, zoneError } from "./contr
  */
 const TICK_MS = 1000;
 
-/** Spotify switches whole songs, so it gets bigger, slower steps in running tempo (controller.ts). */
-const control = () => (useSession.getState().musicSource === "spotify" ? SPOTIFY_CONTROL : CONTROL);
+/** Spotify switches whole songs (bigger, slower steps); DJ stretches songs smoothly; both in running tempo. */
+const CONTROLS = { builtin: CONTROL, spotify: SPOTIFY_CONTROL, dj: DJ_CONTROL };
+const control = () => CONTROLS[useSession.getState().musicSource];
 
 let unsubscribe: (() => void) | null = null;
 let lastTick = 0;
@@ -77,7 +78,8 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
     await music.start(bpm);
   } catch (e) {
     // Spotify not ready (no active device, not Premium, backend down): keep the workout going.
-    warnings.push(`Spotify couldn't start (${spotifyError(e)}). Using built-in tracks instead.`);
+    const name = session.musicSource === "dj" ? "DJ mode" : "Spotify";
+    warnings.push(`${name} couldn't start (${spotifyError(e)}). Using built-in tracks instead.`);
     session.setMusicSource("builtin");
     await music.start(bpm);
   }

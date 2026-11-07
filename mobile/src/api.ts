@@ -91,6 +91,32 @@ export type LiveHr = {
 
 // ---- Spotify + live BPM sync (song tempo vs heart rate). See docs/SPOTIFY.md ----
 
+/** DJ mode song (Jamendo, Creative Commons): the app plays it itself, stretched to the target. */
+export type DjTrack = {
+  id: string;
+  name: string;
+  artist: string;
+  /** stream URL (mp3) */
+  audio: string;
+  image: string | null;
+  /** Jamendo page, for credit */
+  url: string | null;
+  duration_s: number | null;
+  /** measured tempo of the recording */
+  bpm: number;
+  running_bpm: number;
+  energy: number | null;
+  /** e.g. "CC BY-SA 3.0": show it with the song (the license requires credit) */
+  license: string;
+  license_url: string;
+  style: string;
+  match: TempoMatch | null;
+  /** time-stretch that lands it exactly on the target (within ±8%) */
+  playback_rate: number;
+  reachable: boolean;
+  fit_score: number;
+};
+
 export type TempoMatch = {
   song_bpm: number;
   target_bpm: number;
@@ -247,6 +273,18 @@ export const api = {
           play_now: opts.playNow ?? false,
         }),
       },
+    ),
+  /** DJ mode: catalog size. */
+  djStatus: () => request<{ count: number; source: string; max_stretch: number }>("/dj/status"),
+  /** DJ mode: songs ranked for a target tempo (+ energy with an intensity), best first. */
+  djMatch: (opts: { targetBpm: number; intensity?: Intensity | null; exclude?: string[]; limit?: number }) =>
+    request<{ target_bpm: number; intensity: Intensity | null; count: number; tracks: DjTrack[] }>(
+      `/dj/match${query({
+        target_bpm: opts.targetBpm,
+        intensity: opts.intensity ?? undefined,
+        exclude: opts.exclude?.join(",") || undefined,
+        limit: opts.limit,
+      })}`,
     ),
   spotifyPlay: (uris?: string[]) =>
     request<void>("/spotify/play", { method: "POST", body: JSON.stringify({ uris }) }),
