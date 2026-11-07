@@ -5,6 +5,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, View } from "r
 import { Button, Card, Segmented, Stepper } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { startWorkout } from "../engine/workout";
+import { isExpoGo } from "../runtime";
 import { whoopHr } from "../sources/whoopBle";
 import { useBio, type HrStatus } from "../store/bio";
 import { useSession, type ZoneMode } from "../store/session";
@@ -29,15 +30,16 @@ export default function SetupScreen() {
   const mode = useSession((s) => s.mode);
   const hrZone = useSession((s) => s.hrZone);
   const paceZone = useSession((s) => s.paceZone);
-  const useMock = useSession((s) => s.useMock);
-  const { setMode, setZone, setUseMock } = useSession.getState();
+  const simHr = useSession((s) => s.simHr);
+  const simMotion = useSession((s) => s.simMotion);
+  const { setMode, setZone, setSimHr, setSimMotion } = useSession.getState();
 
   const [starting, setStarting] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
   const busy = hrStatus === "scanning" || hrStatus === "connecting";
   const connected = hrStatus === "connected";
-  const canStart = useMock || connected;
+  const canStart = simHr || connected;
 
   async function onStart() {
     setStarting(true);
@@ -61,18 +63,29 @@ export default function SetupScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
+      {isExpoGo && (
+        <Card style={styles.notice}>
+          <Text style={styles.noticeText}>
+            Running in Expo Go: Whoop Bluetooth isn't available, so heart rate is simulated. Cadence and pace use your
+            phone's real sensors. Keep the app open while testing.
+          </Text>
+        </Card>
+      )}
+
       <Card title="Heart rate · Whoop">
         <View style={styles.row}>
-          <View style={[styles.dot, { backgroundColor: connected ? colors.ok : busy ? colors.primary : colors.muted }]} />
+          <View
+            style={[styles.dot, { backgroundColor: simHr || connected ? colors.ok : busy ? colors.primary : colors.muted }]}
+          />
           <Text style={styles.status}>
-            {useMock ? "Demo mode — using simulated runner" : STATUS_TEXT[hrStatus]}
-            {!useMock && hrDevice && connected ? ` · ${hrDevice}` : ""}
+            {simHr ? "Using simulated heart rate" : STATUS_TEXT[hrStatus]}
+            {!simHr && hrDevice && connected ? ` · ${hrDevice}` : ""}
           </Text>
           {busy && <ActivityIndicator size="small" />}
-          {connected && hr != null && <Text style={styles.liveHr}>{hr} bpm</Text>}
+          {!simHr && connected && hr != null && <Text style={styles.liveHr}>{hr} bpm</Text>}
         </View>
 
-        {!useMock && (
+        {!simHr && (
           <>
             {hrError && <Text style={styles.error}>{hrError}</Text>}
             {!connected && (
@@ -90,8 +103,14 @@ export default function SetupScreen() {
         )}
 
         <View style={styles.row}>
-          <Text style={[styles.status, { flex: 1 }]}>Demo mode (simulated runner)</Text>
-          <Switch value={useMock} onValueChange={setUseMock} />
+          <Text style={[styles.status, { flex: 1 }]}>
+            Simulated heart rate{isExpoGo ? " (required in Expo Go)" : ""}
+          </Text>
+          <Switch value={simHr} onValueChange={setSimHr} disabled={isExpoGo} />
+        </View>
+        <View style={styles.row}>
+          <Text style={[styles.status, { flex: 1 }]}>Simulated running (test at a desk)</Text>
+          <Switch value={simMotion} onValueChange={setSimMotion} />
         </View>
       </Card>
 
@@ -130,7 +149,7 @@ export default function SetupScreen() {
       ))}
 
       <Button label={starting ? "Starting…" : "Start workout"} onPress={onStart} disabled={!canStart || starting} />
-      {!canStart && <Text style={styles.help}>Connect your Whoop or turn on demo mode to start.</Text>}
+      {!canStart && <Text style={styles.help}>Connect your Whoop or turn on simulated heart rate to start.</Text>}
 
       <Link href="/ai" style={styles.link}>
         AI demo →
@@ -147,5 +166,7 @@ const styles = StyleSheet.create({
   liveHr: { marginLeft: "auto", fontSize: 15, fontWeight: "700", color: colors.error },
   help: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   error: { fontSize: 14, color: colors.error },
+  notice: { backgroundColor: "#EEF2FF" },
+  noticeText: { fontSize: 14, color: colors.text, lineHeight: 20 },
   link: { textAlign: "center", color: colors.primary, fontSize: 14, paddingVertical: spacing.sm },
 });

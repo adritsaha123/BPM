@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { isExpoGo } from "../runtime";
+
 export type ZoneMode = "hr" | "pace";
 
 /** For "hr": bpm. For "pace": seconds per km (min = faster, max = slower). */
@@ -12,7 +14,10 @@ type SessionState = {
   mode: ZoneMode;
   hrZone: Zone;
   paceZone: Zone;
-  useMock: boolean;
+  /** Simulated heart rate instead of Whoop. Always on in Expo Go (no Bluetooth). */
+  simHr: boolean;
+  /** Simulated cadence + pace instead of the phone's pedometer/GPS (for testing at a desk). */
+  simMotion: boolean;
   startedAt: number | null;
 
   // Music engine output (written by engine/audio, read by UI)
@@ -23,7 +28,8 @@ type SessionState = {
 
   setMode: (m: ZoneMode) => void;
   setZone: (mode: ZoneMode, zone: Zone) => void;
-  setUseMock: (v: boolean) => void;
+  setSimHr: (v: boolean) => void;
+  setSimMotion: (v: boolean) => void;
   setRunning: (running: boolean) => void;
   setTargetBpm: (bpm: number, reason: string) => void;
   setNowPlaying: (title: string, rate: number) => void;
@@ -34,7 +40,8 @@ export const useSession = create<SessionState>()((set, get) => ({
   mode: "hr",
   hrZone: { min: 140, max: 155 },
   paceZone: { min: 300, max: 360 }, // 5:00–6:00 /km
-  useMock: false,
+  simHr: isExpoGo,
+  simMotion: isExpoGo,
   startedAt: null,
 
   targetBpm: 160,
@@ -44,7 +51,8 @@ export const useSession = create<SessionState>()((set, get) => ({
 
   setMode: (mode) => set({ mode }),
   setZone: (mode, zone) => set(mode === "hr" ? { hrZone: zone } : { paceZone: zone }),
-  setUseMock: (useMock) => set({ useMock }),
+  setSimHr: (simHr) => set({ simHr: simHr || isExpoGo }),
+  setSimMotion: (simMotion) => set({ simMotion }),
   setRunning: (running) =>
     set(
       running

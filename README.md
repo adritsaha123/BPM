@@ -10,7 +10,7 @@ Mobile app + Python API + AI, ready to go before the clock starts.
 | CI | GitHub Actions: lint + tests + typecheck on every PR | `.github/` |
 
 ```
-iPhone (dev build) ──HTTP──▶ FastAPI :8000 ──▶ Claude API / other APIs
+iPhone (Expo Go or dev build) ──HTTP──▶ FastAPI :8000 ──▶ Claude API / other APIs
 ```
 
 The app never calls the AI or third-party APIs directly. Everything goes through the backend, so **API keys stay off the phone**.
@@ -38,7 +38,21 @@ Check it at http://localhost:8000/docs (interactive API docs).
 
 ### 2. Mobile app (second terminal) — iOS only
 
-The app uses Bluetooth, background GPS and audio, so **Expo Go won't work**. You need a development build once (rebuild only when native packages or `app.json` change):
+**Testing with Expo Go (fastest):**
+
+```bash
+cd mobile
+npm install
+npx expo start      # scan the QR code with the iPhone Camera app → opens in Expo Go
+```
+
+In Expo Go the app runs with two limits, set up automatically:
+- **Heart rate is simulated.** Expo Go can't use Bluetooth, so Whoop can't connect. The simulated HR follows your real cadence.
+- **Keep the app open.** Background GPS isn't available, so pace only updates while the app is on screen.
+
+Cadence (pedometer), pace (GPS), music and the BPM loop are all real. Turn on **Simulated running** to test at a desk.
+
+**Real Whoop heart rate needs a development build** (rebuild only when native packages or `app.json` change):
 
 ```bash
 cd mobile
@@ -48,15 +62,16 @@ npx expo start                                                  # then open the 
 ```
 
 On a Mac with Xcode, `npx expo run:ios --device` also works.
-On the iOS Simulator (no Bluetooth or GPS), turn on **Demo mode** on the setup screen.
+On the iOS Simulator (no Bluetooth or GPS), turn on **Simulated heart rate** and **Simulated running**.
 
 **Whoop:** in the Whoop app, turn on **Heart Rate Broadcast** in your device settings, then tap **Connect Whoop**.
 
 #### How the BPM app fits together (`mobile/src`)
 | Folder | What's there |
 |---|---|
+| `runtime.ts` | `isExpoGo` flag: switches Bluetooth and background GPS off in Expo Go |
 | `app/` | Expo Router screens: `index` (setup), `workout` (live), `ai` (AI demo) |
-| `sources/` | `whoopBle` (live HR over Bluetooth), `pedometer` (cadence), `location` (pace + background), `mock` (simulated runner) |
+| `sources/` | `whoopBle` (live HR over Bluetooth), `pedometer` (cadence), `location` (pace + background), `mock` (simulated HR and/or running) |
 | `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop) |
 | `audio/` | `player.ts` (time-stretch + crossfade), `tracks.ts` (track catalog with BPMs) |
 | `store/` | Zustand stores: `bio` (live biometrics), `session` (zone, target BPM, log) |
@@ -68,7 +83,7 @@ Demo drum loops live in `assets/music` (`npm run gen:tracks` regenerates them). 
 Venue and campus Wi-Fi often block device-to-device traffic. Fixes, in order:
 1. Put your phone and laptop on the same **phone hotspot**.
 2. Start Expo with `npx expo start --tunnel`, then expose the backend with `ngrok http 8000` and put the ngrok URL in `mobile/.env` as `EXPO_PUBLIC_API_URL=...` (restart Expo).
-3. Fallback: turn on **Demo mode** on the setup screen. The BPM loop runs fully on the phone, so it doesn't need the backend.
+3. Fallback: turn on **Simulated heart rate** and **Simulated running** on the setup screen. The BPM loop runs fully on the phone, so it doesn't need the backend.
 
 ---
 

@@ -1,5 +1,6 @@
-import { BleManager, State, type Device, type Subscription } from "react-native-ble-plx";
+import type { BleManager, Device, Subscription } from "react-native-ble-plx";
 
+import { isExpoGo } from "../runtime";
 import { useBio } from "../store/bio";
 
 /**
@@ -19,7 +20,14 @@ let scanTimer: ReturnType<typeof setTimeout> | null = null;
 let wantConnected = false;
 
 const bio = () => useBio.getState();
-const getManager = () => (manager ??= new BleManager());
+
+// Loaded lazily: importing react-native-ble-plx at module level crashes Expo Go.
+type BleModule = typeof import("react-native-ble-plx");
+let ble: BleModule | null = null;
+function getManager(): BleManager {
+  ble ??= require("react-native-ble-plx") as BleModule;
+  return (manager ??= new ble.BleManager());
+}
 
 /** Parse a Heart Rate Measurement (0x2A37) value. Byte 0 = flags; bit 0 → HR is uint16. */
 export function parseHrMeasurement(base64: string): number | null {
@@ -49,6 +57,7 @@ function base64ToBytes(b64: string): number[] {
 }
 
 async function waitForPoweredOn(m: BleManager): Promise<boolean> {
+  const { State } = ble!;
   const state = await m.state();
   if (state === State.PoweredOn) return true;
   if (state === State.PoweredOff || state === State.Unauthorized || state === State.Unsupported) return false;
@@ -93,7 +102,14 @@ async function connectTo(d: Device) {
 
 export const whoopHr = {
   /** Scan for a Whoop (or any BLE HR strap) and stay connected, auto-reconnecting. */
+  /** False in Expo Go: Bluetooth needs a development build. */
+  available: !isExpoGo,
+
   async connect() {
+    if (isExpoGo) {
+      bio().setHrStatus("error", { error: "Whoop needs a development build — Expo Go can't use Bluetooth." });
+      return;
+    }
     wantConnected = true;
     const m = getManager();
     if (!(await waitForPoweredOn(m))) {

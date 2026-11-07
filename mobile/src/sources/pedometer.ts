@@ -9,7 +9,10 @@ import { useBio } from "../store/bio";
  */
 const WINDOW_MS = 10_000;
 
+const STALE_MS = 4_000;
+
 let sub: { remove(): void } | null = null;
+let staleTimer: ReturnType<typeof setInterval> | null = null;
 let samples: { t: number; steps: number }[] = [];
 
 export const pedometer = {
@@ -28,12 +31,20 @@ export const pedometer = {
       const dtMin = (now - first.t) / 60_000;
       if (dtMin > 0.05) useBio.getState().pushCadence((steps - first.steps) / dtMin);
     });
+    // No step events while standing still, so decay cadence toward 0 ourselves.
+    if (staleTimer) clearInterval(staleTimer);
+    staleTimer = setInterval(() => {
+      const last = samples[samples.length - 1];
+      if (last && Date.now() - last.t > STALE_MS) useBio.getState().pushCadence(0);
+    }, 2_000);
     return true;
   },
 
   stop() {
     sub?.remove();
     sub = null;
+    if (staleTimer) clearInterval(staleTimer);
+    staleTimer = null;
     samples = [];
   },
 };

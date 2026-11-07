@@ -47,12 +47,11 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
   const session = useSession.getState();
   useBio.getState().reset();
 
-  if (session.useMock) {
-    mock.start();
-  } else {
-    if (useBio.getState().hrStatus !== "connected") whoopHr.connect(); // non-blocking; loop holds until HR arrives
-    if (!(await pedometer.start())) warnings.push("Motion access denied — no cadence.");
-    if (!(await location.start())) warnings.push("Location denied — no pace, and the app may sleep when locked.");
+  mock.start({ hr: session.simHr, motion: session.simMotion });
+  if (!session.simHr && useBio.getState().hrStatus !== "connected") whoopHr.connect(); // non-blocking; loop holds until HR arrives
+  if (!session.simMotion) {
+    if (!(await pedometer.start())) warnings.push("Motion access denied or unavailable — no cadence.");
+    if (!(await location.start())) warnings.push("Location denied — no pace.");
   }
 
   await musicPlayer.init();
