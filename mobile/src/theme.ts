@@ -7,6 +7,7 @@ export const colors = {
   border: "#E5E7EB",
   primary: "#4F46E5",
   ok: "#059669",
+  warn: "#D97706",
   error: "#DC2626",
 };
 
