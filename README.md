@@ -43,7 +43,9 @@ It does first-time setup automatically (Python virtualenv, packages, `backend/.e
 On Windows each one opens in its own window; on macOS/Linux they share one terminal and Ctrl+C stops all of them.
 Options: `-NoWhoop` / `--no-whoop` skips the band (use **Simulated** HR in the app). `-Tunnel` / `--tunnel` helps when venue Wi-Fi blocks the phone.
 
-**3. First time only, connect your Whoop account:** put `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `backend/.env` (ask the team; never commit them), then open **http://localhost:8000/whoop/login** in a browser **on the laptop** and approve. http://localhost:8000/whoop/status should then say `"mode": "live"`. Skip this and the app still works, with sample Whoop zones.
+**3. Connect a Whoop account** (for personal HR zones; skip it and the app uses sample zones). Put `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET` in `backend/.env` (ask the team; never commit them), then either:
+- **From the app (recommended):** run with a public URL, `.\dev.ps1 -NgrokDomain your-name.ngrok-free.app` (one-time setup in [Connect Whoop from the app](#connect-whoop-from-the-app-ngrok)), and tap **Connect Whoop account** on the setup screen. Each person logs in to their own Whoop.
+- **From the laptop:** open **http://localhost:8000/whoop/login** in a browser on the laptop and approve. This connects one shared "default" account.
 
 **4. On the iPhone:** scan the QR code with the **Camera** app, which opens Expo Go. Then:
 1. Allow **Motion & Fitness** and **Location**.
@@ -58,9 +60,33 @@ Options: `-NoWhoop` / `--no-whoop` skips the band (use **Simulated** HR in the a
 | Can't reach the backend | Is the backend running? Same Wi-Fi? On Windows, allow Python through the firewall on private networks. |
 | Waiting for the laptop script | The Whoop HR process hasn't found the band. Restart Heart Rate Broadcast and move the band closer. |
 | Stream went stale | Band out of range, or the Whoop HR process stopped. Check its output. |
-| Zone chips say "sample data" | Do step 3, then reload the app (shake the phone → Reload). |
+| Zone chips say "sample data" | The backend has no Whoop keys: add them to `backend/.env` and restart. |
+| Connect Whoop shows a WHOOP error about the redirect | The Redirect URL in the Whoop dashboard must exactly match `https://<your domain>/whoop/callback`. |
 
 Prefer running the pieces by hand? The commands are in **Quick start** below and in `docs/WHOOP.md`.
+
+### Connect Whoop from the app (ngrok)
+
+The backend stays on your laptop; [ngrok](https://ngrok.com) gives it a free, permanent https address. Whoop needs that to send people back after they log in, and as a bonus the phone no longer has to be on the same Wi-Fi.
+
+One-time setup (whoever runs the backend):
+1. Sign up at ngrok.com (free). In the dashboard, copy your **authtoken** and claim your free **static domain** (looks like `your-name.ngrok-free.app`).
+2. Install ngrok and add the token:
+   ```powershell
+   winget install ngrok.ngrok          # macOS: brew install ngrok
+   ngrok config add-authtoken <your-authtoken>
+   ```
+3. In the [Whoop developer dashboard](https://developer-dashboard.whoop.com), open the **BPM** app and add the Redirect URL `https://your-name.ngrok-free.app/whoop/callback`.
+
+Then every time:
+```powershell
+.\dev.ps1 -NgrokDomain your-name.ngrok-free.app     # macOS: ./dev.sh --ngrok your-name.ngrok-free.app
+```
+This starts ngrok too, points the backend's Whoop redirect and the app at the public URL, and opens the Expo QR as usual. Tip: `$env:BPM_NGROK_DOMAIN = "your-name.ngrok-free.app"` (or `export BPM_NGROK_DOMAIN=...`) saves typing it.
+
+In the app, **Whoop account → Connect Whoop account** opens Whoop's login, then returns to the app showing **Connected** and your own HR zones. The first visit may show an ngrok "You are about to visit" page; tap **Visit Site**. Each phone gets its own anonymous ID, so every teammate can connect their own Whoop.
+
+> Live heart rate still comes through the laptop's Bluetooth (the Whoop HR window) while you use Expo Go. Only a development build can read the band directly on the phone; see below.
 
 ---
 
@@ -117,7 +143,8 @@ Limits in Expo Go:
 - **Keep the app open.** Background GPS isn't available, so pace only updates while the app is on screen.
 - No band handy? Pick **Simulated** (HR follows your real cadence) and/or turn on **Simulated running** to test at a desk.
 
-**Phone-only Whoop Bluetooth (no laptop) needs a development build** (rebuild only when native packages or `app.json` change):
+**Phone-only Whoop Bluetooth (no laptop) needs a development build** (rebuild only when native packages or `app.json` change).
+Without a paid Apple Developer account, the only way is a **Mac with Xcode** and a free Apple ID: plug in the iPhone and run `npx expo run:ios --device` in `mobile/`. Apps signed this way expire after 7 days (just run it again). With a paid account, EAS can build in the cloud from any computer:
 
 ```bash
 cd mobile

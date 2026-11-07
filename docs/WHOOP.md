@@ -9,6 +9,22 @@ Two separate pipes, because WHOOP's web API has no live data:
 
 No WHOOP credentials in `backend/.env`? Every `/whoop/*` endpoint serves **mock data** in the same shape, so the UI can be built without a band.
 
+## 0. Connect WHOOP from the app (per user)
+
+Each phone sends an anonymous id (`X-User-Id`), and the backend keeps a separate WHOOP login per id
+(`backend/.whoop_tokens.<id>.json`, gitignored). Requests without an id use the "default" login from section 1.
+Until a user connects their own WHOOP, they borrow the default (laptop) login if there is one: `/whoop/status` returns
+`"shared": true` and the app offers **Connect my own Whoop**. Refreshes of a borrowed login are saved to the default token file.
+
+Flow: app **Connect Whoop account** → in-app browser → `/whoop/login?user=<id>&return_to=<app url>` → WHOOP login →
+`/whoop/callback` saves the tokens → redirects back to the app (`bpm://…` or Expo Go's `exp://…`; nothing else is allowed).
+
+WHOOP has to reach the callback from the phone, so `WHOOP_REDIRECT_URI` must be a public https URL registered on the
+WHOOP app. Easiest: an ngrok static domain. `dev.ps1 -NgrokDomain <domain>` / `dev.sh --ngrok <domain>` set
+`WHOOP_REDIRECT_URI` and the app's `EXPO_PUBLIC_API_URL` for you. Setup steps are in the README.
+
+`DELETE /whoop/connection` (the app's **Disconnect** button) forgets the current user's login.
+
 ## 1. Connect WHOOP (once, on the laptop running the backend)
 
 The WHOOP app **BPM** is registered on developer-dashboard.whoop.com with redirect `http://localhost:8000/whoop/callback` and all read scopes. Its client ID and secret go in `backend/.env` (never commit it):
@@ -36,7 +52,8 @@ Check: http://localhost:8000/whoop/summary
 
 | Endpoint | Returns |
 |---|---|
-| `GET /whoop/status` | `mode`: `live`, `mock`, or `not_connected` |
+| `GET /whoop/status` | `mode`: `live`, `mock`, or `not_connected` (for the `X-User-Id` user) |
+| `DELETE /whoop/connection` | Forget the current user's WHOOP login |
 | `GET /whoop/summary?days=30` | max HR, resting HR, HRV, recovery, 5 HR zones (bpm ranges), recent runs, steps |
 | `GET /whoop/workouts?days=30&runs_only=true` | per workout: avg/max HR, minutes in each zone, distance, pace (min/km), strain |
 | `GET /whoop/cycles?days=30` | per day-ish cycle: strain, avg/max HR, `step_count` |

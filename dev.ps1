@@ -5,12 +5,16 @@
 #   .\dev.ps1              # everything
 #   .\dev.ps1 -NoWhoop     # skip the live HR relay (use "Simulated" HR in the app)
 #   .\dev.ps1 -Tunnel      # Expo tunnel mode, for Wi-Fi that blocks phone <-> laptop traffic
+#   .\dev.ps1 -NgrokDomain your-name.ngrok-free.app
+#                          # public https backend via ngrok: enables "Connect Whoop" in the app
+#                          # and works without being on the same Wi-Fi (or set $env:BPM_NGROK_DOMAIN)
 #
 # If PowerShell refuses to run scripts, run once:
 #   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 param(
     [switch]$NoWhoop,
-    [switch]$Tunnel
+    [switch]$Tunnel,
+    [string]$NgrokDomain = $env:BPM_NGROK_DOMAIN
 )
 $ErrorActionPreference = "Stop"
 
@@ -39,8 +43,23 @@ function Start-Window([string]$title, [string]$dir, [string]$command) {
     Start-Process powershell -ArgumentList "-NoExit", "-Command", $full | Out-Null
 }
 
+# ---- 0. Optional public URL (ngrok) ----
+$publicEnv = ""
+$appEnv = ""
+if ($NgrokDomain) {
+    if (-not (Get-Command ngrok -ErrorAction SilentlyContinue)) {
+        throw "ngrok not found. Install it (winget install ngrok.ngrok), run 'ngrok config add-authtoken <token>', then retry."
+    }
+    $publicUrl = "https://$NgrokDomain"
+    # Environment variables override backend/.env and mobile/.env for these windows only.
+    $publicEnv = "`$env:WHOOP_REDIRECT_URI = '$publicUrl/whoop/callback'; "
+    $appEnv = "`$env:EXPO_PUBLIC_API_URL = '$publicUrl'; "
+    Start-Window "BPM ngrok" $root "ngrok http 8000 --url=$NgrokDomain"
+    Write-Host "Public backend: $publicUrl  (WHOOP redirect URL must be $publicUrl/whoop/callback)" -ForegroundColor Cyan
+}
+
 # ---- 1. Backend ----
-Start-Window "BPM backend" $backend "& '$py' -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+Start-Window "BPM backend" $backend "$publicEnv& '$py' -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
 
 # ---- 2. Whoop live HR relay (waits for the backend first) ----
 if (-not $NoWhoop) {
@@ -51,9 +70,13 @@ if (-not $NoWhoop) {
 
 # ---- 3. Expo ----
 $expo = if ($Tunnel) { "npx expo start --tunnel" } else { "npx expo start" }
-Start-Window "BPM Expo" $mobile $expo
+Start-Window "BPM Expo" $mobile "$appEnv$expo"
 
 Write-Host ""
 Write-Host "Started. Scan the QR code in the 'BPM Expo' window with your iPhone Camera." -ForegroundColor Green
-Write-Host "First time only: open http://localhost:8000/whoop/login on this laptop to connect your Whoop account."
+if ($NgrokDomain) {
+    Write-Host "Connect Whoop from the app's 'Whoop account' card (first visit may show an ngrok warning page: tap Visit Site)."
+} else {
+    Write-Host "Whoop account: open http://localhost:8000/whoop/login on this laptop, or use -NgrokDomain to connect from the app."
+}
 Write-Host "Close the windows (or Ctrl+C in each) to stop."

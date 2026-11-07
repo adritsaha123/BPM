@@ -1,6 +1,8 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 
+import { getUserId } from "./userId";
+
 /**
  * Where is the backend?
  * 1. EXPO_PUBLIC_API_URL in mobile/.env wins (use this for ngrok or a deployed URL).
@@ -23,7 +25,12 @@ export const API_URL = resolveApiUrl();
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Id": await getUserId(), // whose WHOOP login to use
+      "ngrok-skip-browser-warning": "1", // ngrok free tunnels otherwise answer with an HTML warning page
+      ...(init?.headers ?? {}),
+    },
   });
   if (!res.ok) {
     const body = await res.text();
@@ -104,7 +111,12 @@ export const api = {
     request<Item>("/items", { method: "POST", body: JSON.stringify({ title, notes }) }),
   deleteItem: (id: number) => request<void>(`/items/${id}`, { method: "DELETE" }),
 
-  whoopStatus: () => request<{ mode: WhoopMode; login_url: string }>("/whoop/status"),
+  whoopStatus: () => request<{ mode: WhoopMode; login_url: string; user: string; shared?: boolean }>("/whoop/status"),
+  /** Forget this user's WHOOP login on the backend. */
+  whoopDisconnect: () => request<void>("/whoop/connection", { method: "DELETE" }),
+  /** Browser URL that starts WHOOP login for this user and returns to `returnTo` (an app URL). */
+  whoopLoginUrl: async (returnTo: string) =>
+    `${API_URL}/whoop/login?${new URLSearchParams({ user: await getUserId(), return_to: returnTo })}`,
   whoopSummary: (days = 30) => request<WhoopSummary>(`/whoop/summary?days=${days}`),
   whoopWorkouts: (days = 30, runsOnly = false) =>
     request<WhoopWorkout[]>(`/whoop/workouts?days=${days}&runs_only=${runsOnly}`),

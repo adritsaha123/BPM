@@ -133,3 +133,90 @@ def test_parse_hr_measurement():
     assert parse_hr_measurement(bytes([0x01, 0x96, 0x00]))["bpm"] == 150
     m = parse_hr_measurement(bytes([0x16, 140, 0x00, 0x04, 0x00, 0x02]))
     assert m == {"bpm": 140, "rr_ms": [1000.0, 500.0], "sensor_contact": True}
+
+
+# ---- multi-user (in-app "Connect WHOOP") ----
+
+APP_USER = "a1b2c3d4-0000-4000-8000-123456789abc"
+
+
+def _fake_tokens(monkeypatch, token="u1"):
+    monkeypatch.setattr(
+        whoop,
+        "_token_request",
+        lambda data: {"access_token": token, "refresh_token": "r", "expires_in": 3600},
+    )
+
+
+def test_app_login_redirects_back_into_app_and_saves_per_user(live_creds, monkeypatch):
+    _fake_tokens(monkeypatch)
+    login = client.get(
+        "/whoop/login",
+        params={"user": APP_USER, "return_to": "exp://192.168.1.5:8081/--/whoop-connected"},
+        follow_redirects=False,
+    )
+    state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+    r = client.get("/whoop/callback", params={"code": "abc", "state": state}, follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "exp://192.168.1.5:8081/--/whoop-connected?whoop=connected"
+
+    # Saved for the app user only; the default (laptop) login is untouched.
+    assert not live_creds.exists()
+    assert (live_creds.parent / f"tokens.{APP_USER}.json").exists()
+    assert client.get("/whoop/status", headers={"X-User-Id": APP_USER}).json()["mode"] == "live"
+    assert client.get("/whoop/status").json()["mode"] == "not_connected"
+
+
+def test_return_to_must_be_the_app(live_creds, monkeypatch):
+    _fake_tokens(monkeypatch)
+    login = client.get(
+        "/whoop/login", params={"user": APP_USER, "return_to": "https://evil.example"}, follow_redirects=False
+    )
+    state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+    r = client.get("/whoop/callback", params={"code": "abc", "state": state}, follow_redirects=False)
+    assert r.status_code == 200 and "connected" in r.text  # no redirect to an outside site
+
+
+def test_whoop_error_redirects_back_to_app(live_creds):
+    login = client.get("/whoop/login", params={"return_to": "bpm://whoop-connected"}, follow_redirects=False)
+    state = parse_qs(urlparse(login.headers["location"]).query)["state"][0]
+    r = client.get(
+        "/whoop/callback", params={"error": "access_denied", "state": state}, follow_redirects=False
+    )
+    assert r.status_code == 302 and "whoop=error" in r.headers["location"]
+
+
+def test_disconnect_forgets_user(live_creds, monkeypatch):
+    _fake_tokens(monkeypatch)
+    whoop.exchange_code("abc", APP_USER)
+    assert whoop.mode(APP_USER) == "live"
+    assert client.delete("/whoop/connection", headers={"X-User-Id": APP_USER}).status_code == 204
+    assert whoop.mode(APP_USER) == "not_connected"
+
+
+def test_bad_user_id_falls_back_to_default():
+    assert whoop.valid_user_id("../../etc/passwd") == whoop.DEFAULT_USER
+    assert whoop.valid_user_id(None) == whoop.DEFAULT_USER
+    assert whoop.valid_user_id(APP_USER) == APP_USER
+
+
+def test_app_user_falls_back_to_laptop_login_until_connected(live_creds, monkeypatch):
+    _fake_tokens(monkeypatch, token="laptop")
+    whoop.exchange_code("abc")  # default (laptop) login
+    status = client.get("/whoop/status", headers={"X-User-Id": APP_USER}).json()
+    assert status["mode"] == "live" and status["shared"] is True
+    assert whoop._access_token(user=APP_USER) == "laptop"
+
+    _fake_tokens(monkeypatch, token="mine")
+    whoop.exchange_code("abc", APP_USER)  # user connects their own
+    status = client.get("/whoop/status", headers={"X-User-Id": APP_USER}).json()
+    assert status["shared"] is False
+    assert whoop._access_token(user=APP_USER) == "mine"
+
+
+def test_shared_refresh_saves_to_laptop_login(live_creds, monkeypatch):
+    live_creds.write_text(json.dumps({"access_token": "old", "refresh_token": "r1", "expires_at": 0}))
+    _fake_tokens(monkeypatch, token="new")
+    assert whoop._access_token(user=APP_USER) == "new"
+    assert json.loads(live_creds.read_text())["access_token"] == "new"
+    assert not (live_creds.parent / f"tokens.{APP_USER}.json").exists()

@@ -61,7 +61,9 @@
           "motionPermission": "BPM Coach uses motion data to measure your running cadence."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "scheme": "bpm"
   }

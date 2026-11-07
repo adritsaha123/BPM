@@ -1,7 +1,8 @@
 """WHOOP Developer API v2 client.
 
-- OAuth 2.0 (authorization code + rotating refresh token). Tokens are saved to
-  WHOOP_TOKEN_FILE (backend/.whoop_tokens.json, gitignored).
+- OAuth 2.0 (authorization code + rotating refresh token), one login per user.
+  The default user (laptop login, scripts) saves to WHOOP_TOKEN_FILE (backend/.whoop_tokens.json);
+  app users (identified by the X-User-Id header) save to .whoop_tokens.<user>.json. All gitignored.
 - Paginated reads for workouts, cycles (incl. step_count), recovery and body measurements.
 - Mock mode: with WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET blank, every read returns realistic
   sample data in the same shape, so teammates can build without a WHOOP account.
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import secrets
 import time
 from datetime import UTC, datetime, timedelta
@@ -34,6 +36,20 @@ USER_AGENT = "BPM-hackathon/0.1"  # WHOOP rejects browser-like user agents on it
 PAGE_LIMIT = 25  # WHOOP's max page size
 CACHE_TTL_S = 120  # avoid hammering WHOOP (100 req/min limit) when the app polls
 RUNNING_SPORT_IDS = {0}  # WHOOP sport_id 0 = Running
+DEFAULT_USER = "default"  # laptop login + scripts; app users send their own id
+_USER_ID_RE = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+# Where the backend may send the user after login: the app (dev build) or Expo Go.
+ALLOWED_RETURN_PREFIXES = ("bpm://", "exp://", "exps://")
+
+
+def valid_user_id(user: str | None) -> str:
+    """Normalize a user id from the app; anything missing or malformed is the default user."""
+    return user if user and _USER_ID_RE.match(user) else DEFAULT_USER
+
+
+def valid_return_to(url: str | None) -> str | None:
+    """Only allow redirecting back into the app (prevents an open redirect)."""
+    return url if url and url.startswith(ALLOWED_RETURN_PREFIXES) else None
 
 
 class WhoopNotConnectedError(Exception):
@@ -47,22 +63,35 @@ class WhoopAPIError(Exception):
 # --------------------------------------------------------------------------- mode
 
 
-def mode() -> str:
+def mode(user: str = DEFAULT_USER) -> str:
     """'mock' (no credentials), 'not_connected' (credentials, no login yet) or 'live'."""
     if not get_settings().whoop_enabled:
         return "mock"
-    return "live" if load_tokens() is not None else "not_connected"
+    return "live" if login_owner(user) is not None else "not_connected"
+
+
+def login_owner(user: str = DEFAULT_USER) -> str | None:
+    """Whose WHOOP login serves this user: their own, else the shared laptop ("default") login."""
+    if load_tokens(user) is not None:
+        return user
+    if user != DEFAULT_USER and load_tokens(DEFAULT_USER) is not None:
+        return DEFAULT_USER
+    return None
 
 
 # --------------------------------------------------------------------------- OAuth
 
-_pending_states: set[str] = set()
+_pending_states: dict[str, dict] = {}  # state -> {"user", "return_to", "at"}
+STATE_TTL_S = 900
 
 
-def authorization_url() -> str:
+def authorization_url(user: str = DEFAULT_USER, return_to: str | None = None) -> str:
     s = get_settings()
+    now = time.time()
+    for old in [k for k, v in _pending_states.items() if now - v["at"] > STATE_TTL_S]:
+        _pending_states.pop(old, None)
     state = secrets.token_hex(4)  # WHOOP wants an 8-character state
-    _pending_states.add(state)
+    _pending_states[state] = {"user": user, "return_to": valid_return_to(return_to), "at": now}
     params = {
         "response_type": "code",
         "client_id": s.whoop_client_id,
@@ -73,19 +102,20 @@ def authorization_url() -> str:
     return f"{AUTH_URL}?{urlencode(params)}"
 
 
-def consume_state(state: str) -> bool:
-    if state in _pending_states:
-        _pending_states.discard(state)
-        return True
-    return False
+def consume_state(state: str) -> dict | None:
+    """Returns {"user", "return_to"} for a state we issued, once; None otherwise."""
+    return _pending_states.pop(state, None)
 
 
-def _token_path() -> Path:
-    return Path(get_settings().whoop_token_file)
+def _token_path(user: str = DEFAULT_USER) -> Path:
+    base = Path(get_settings().whoop_token_file)
+    if user == DEFAULT_USER:
+        return base
+    return base.with_name(f"{base.stem}.{valid_user_id(user)}{base.suffix}")
 
 
-def load_tokens() -> dict | None:
-    path = _token_path()
+def load_tokens(user: str = DEFAULT_USER) -> dict | None:
+    path = _token_path(user)
     if not path.exists():
         return None
     try:
@@ -94,10 +124,10 @@ def load_tokens() -> dict | None:
         return None
 
 
-def save_tokens(tokens: dict) -> dict:
+def save_tokens(tokens: dict, user: str = DEFAULT_USER) -> dict:
     tokens = dict(tokens)
     tokens["expires_at"] = time.time() + int(tokens.get("expires_in", 3600)) - 60
-    path = _token_path()
+    path = _token_path(user)
     path.write_text(json.dumps(tokens, indent=2))
     try:
         path.chmod(0o600)
@@ -115,47 +145,59 @@ def _token_request(data: dict) -> dict:
     return r.json()
 
 
-def exchange_code(code: str) -> dict:
+def exchange_code(code: str, user: str = DEFAULT_USER) -> dict:
     data = {
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": get_settings().whoop_redirect_uri,
     }
-    _cache.clear()
-    return save_tokens(_token_request(data))
+    _clear_cache(user)
+    return save_tokens(_token_request(data), user)
 
 
-def _refresh(tokens: dict) -> dict:
+def disconnect(user: str = DEFAULT_USER) -> None:
+    """Forget this user's WHOOP login."""
+    _token_path(user).unlink(missing_ok=True)
+    _clear_cache(user)
+
+
+def _refresh(tokens: dict, user: str = DEFAULT_USER) -> dict:
     if not tokens.get("refresh_token"):
-        raise WhoopNotConnectedError("WHOOP session expired. Open /whoop/login on the laptop again.")
+        raise WhoopNotConnectedError("WHOOP session expired. Connect WHOOP again.")
     new = _token_request(
         {"grant_type": "refresh_token", "refresh_token": tokens["refresh_token"], "scope": "offline"}
     )
     new.setdefault("refresh_token", tokens["refresh_token"])
-    return save_tokens(new)
+    return save_tokens(new, user)
 
 
-def _access_token(force_refresh: bool = False) -> str:
-    tokens = load_tokens()
-    if tokens is None:
+def _access_token(force_refresh: bool = False, user: str = DEFAULT_USER) -> str:
+    owner = login_owner(user)
+    tokens = load_tokens(owner) if owner else None
+    if owner is None or tokens is None:
         raise WhoopNotConnectedError(
-            "WHOOP not connected yet. Open http://localhost:8000/whoop/login on the laptop "
-            "running the backend."
+            "WHOOP not connected yet. Tap Connect WHOOP in the app, or open /whoop/login on the "
+            "laptop running the backend."
         )
     if force_refresh or time.time() >= tokens.get("expires_at", 0):
-        tokens = _refresh(tokens)
+        tokens = _refresh(tokens, owner)  # refresh tokens rotate: always save to the owner's file
     return tokens["access_token"]
 
 
 # --------------------------------------------------------------------------- HTTP
 
-_cache: dict[tuple, tuple[float, Any]] = {}
+_cache: dict[tuple, tuple[float, Any]] = {}  # key starts with the user id
 
 
-def _get(path: str, params: dict | None = None) -> dict:
+def _clear_cache(user: str) -> None:
+    for key in [k for k in _cache if k[0] == user]:
+        _cache.pop(key, None)
+
+
+def _get(path: str, params: dict | None = None, user: str = DEFAULT_USER) -> dict:
     force_refresh = False
     for attempt in range(4):
-        token = _access_token(force_refresh=force_refresh)
+        token = _access_token(force_refresh=force_refresh, user=user)
         r = httpx.get(
             f"{API_BASE}{path}",
             params=params,
@@ -182,8 +224,8 @@ def _iso(dt: datetime) -> str:
     return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 
-def _collect(path: str, days: int, max_records: int = 1000) -> list[dict]:
-    key = (path, days)
+def _collect(path: str, days: int, max_records: int = 1000, user: str = DEFAULT_USER) -> list[dict]:
+    key = (user, path, days)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL_S:
         return hit[1]
@@ -196,7 +238,7 @@ def _collect(path: str, days: int, max_records: int = 1000) -> list[dict]:
     }
     records: list[dict] = []
     while True:
-        page = _get(path, params)
+        page = _get(path, params, user)
         records.extend(page.get("records", []))
         next_token = page.get("next_token")
         if not next_token or len(records) >= max_records:
@@ -208,12 +250,12 @@ def _collect(path: str, days: int, max_records: int = 1000) -> list[dict]:
     return records
 
 
-def _single(path: str) -> dict:
-    key = (path, None)
+def _single(path: str, user: str = DEFAULT_USER) -> dict:
+    key = (user, path, None)
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < CACHE_TTL_S:
         return hit[1]
-    data = _get(path)
+    data = _get(path, user=user)
     _cache[key] = (time.time(), data)
     return data
 
@@ -221,26 +263,28 @@ def _single(path: str) -> dict:
 # --------------------------------------------------------------------------- raw reads (live or mock)
 
 
-def get_workouts(days: int = 30) -> list[dict]:
-    return _mock_workouts(days) if mode() == "mock" else _collect("/v2/activity/workout", days)
+def get_workouts(days: int = 30, user: str = DEFAULT_USER) -> list[dict]:
+    if mode(user) == "mock":
+        return _mock_workouts(days)
+    return _collect("/v2/activity/workout", days, user=user)
 
 
-def get_cycles(days: int = 30) -> list[dict]:
-    return _mock_cycles(days) if mode() == "mock" else _collect("/v2/cycle", days)
+def get_cycles(days: int = 30, user: str = DEFAULT_USER) -> list[dict]:
+    return _mock_cycles(days) if mode(user) == "mock" else _collect("/v2/cycle", days, user=user)
 
 
-def get_recovery(days: int = 30) -> list[dict]:
-    return _mock_recovery(days) if mode() == "mock" else _collect("/v2/recovery", days)
+def get_recovery(days: int = 30, user: str = DEFAULT_USER) -> list[dict]:
+    return _mock_recovery(days) if mode(user) == "mock" else _collect("/v2/recovery", days, user=user)
 
 
-def get_body() -> dict:
-    return _mock_body() if mode() == "mock" else _single("/v2/user/measurement/body")
+def get_body(user: str = DEFAULT_USER) -> dict:
+    return _mock_body() if mode(user) == "mock" else _single("/v2/user/measurement/body", user)
 
 
-def get_profile() -> dict:
-    if mode() == "mock":
+def get_profile(user: str = DEFAULT_USER) -> dict:
+    if mode(user) == "mock":
         return {"user_id": 0, "first_name": "Mock", "last_name": "Runner", "email": "mock@example.com"}
-    return _single("/v2/user/profile/basic")
+    return _single("/v2/user/profile/basic", user)
 
 
 # --------------------------------------------------------------------------- normalized views
@@ -326,23 +370,25 @@ def _avg(values: list) -> float | None:
     return round(sum(vals) / len(vals), 1) if vals else None
 
 
-def summary(days: int = 30) -> dict:
+def summary(days: int = 30, user: str = DEFAULT_USER) -> dict:
     """Everything the music engine needs to personalize targets, in one call."""
-    body = get_body()
+    body = get_body(user)
     recoveries = sorted(
-        (normalize_recovery(r) for r in get_recovery(days)), key=lambda r: r["created_at"] or "", reverse=True
+        (normalize_recovery(r) for r in get_recovery(days, user)),
+        key=lambda r: r["created_at"] or "",
+        reverse=True,
     )
     latest_rec = next((r for r in recoveries if r["resting_hr"]), {})
-    workouts = [normalize_workout(w) for w in get_workouts(days)]
+    workouts = [normalize_workout(w) for w in get_workouts(days, user)]
     runs = sorted((w for w in workouts if w["is_run"]), key=lambda w: w["start"] or "", reverse=True)
     cycles = sorted(
-        (normalize_cycle(c) for c in get_cycles(days)), key=lambda c: c["start"] or "", reverse=True
+        (normalize_cycle(c) for c in get_cycles(days, user)), key=lambda c: c["start"] or "", reverse=True
     )
 
     max_hr = body.get("max_heart_rate")
     resting_hr = latest_rec.get("resting_hr")
     return {
-        "mode": mode(),
+        "mode": mode(user),
         "days": days,
         "max_hr": max_hr,
         "resting_hr": resting_hr,

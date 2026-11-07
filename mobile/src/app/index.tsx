@@ -2,7 +2,7 @@ import { Link, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
-import { api, type WhoopSummary } from "../api";
+import { api, type WhoopMode, type WhoopSummary } from "../api";
 import { Button, Card, Segmented, Stepper } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { startWorkout } from "../engine/workout";
@@ -12,6 +12,7 @@ import { whoopHr } from "../sources/whoopBle";
 import { useBio, type HrStatus } from "../store/bio";
 import { useSession, type HrSource, type ZoneMode } from "../store/session";
 import { colors, spacing } from "../theme";
+import { connectWhoop, disconnectWhoop } from "../whoopAuth";
 
 const STATUS_TEXT: Record<Exclude<HrSource, "sim">, Record<HrStatus, string>> = {
   phone: {
@@ -32,6 +33,14 @@ const STATUS_TEXT: Record<Exclude<HrSource, "sim">, Record<HrStatus, string>> = 
     disconnected: "Stream went stale",
     error: "Can't reach the backend",
   },
+};
+
+const WHOOP_MODE_TEXT: Record<WhoopMode | "offline" | "loading", string> = {
+  loading: "Checking…",
+  live: "Connected: zones and history come from your Whoop",
+  not_connected: "Not connected. Connect to use your own HR zones.",
+  mock: "Sample data (no Whoop keys on the backend)",
+  offline: "Can't reach the backend",
 };
 
 const SOURCE_OPTIONS: { value: HrSource; label: string }[] = [
@@ -56,6 +65,10 @@ export default function SetupScreen() {
   const [starting, setStarting] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [whoop, setWhoop] = useState<WhoopSummary | null>(null);
+  const [whoopMode, setWhoopMode] = useState<WhoopMode | "offline" | null>(null);
+  const [whoopShared, setWhoopShared] = useState(false); // borrowing the laptop's login
+  const [whoopBusy, setWhoopBusy] = useState(false);
+  const [whoopMsg, setWhoopMsg] = useState<string | null>(null);
 
   // Laptop relay polls while selected so you can see live HR before starting.
   useEffect(() => {
@@ -64,10 +77,45 @@ export default function SetupScreen() {
     return () => relayHr.stop();
   }, [hrSource]);
 
-  // Personal HR zones from the Whoop history API (sample data until Whoop is connected on the backend).
+  // This user's WHOOP account status + personal HR zones (sample data when the backend has no WHOOP keys).
+  async function loadWhoop() {
+    try {
+      const { mode: m, shared } = await api.whoopStatus();
+      setWhoopMode(m);
+      setWhoopShared(Boolean(shared));
+      setWhoop(m === "not_connected" ? null : await api.whoopSummary());
+    } catch {
+      setWhoopMode("offline");
+      setWhoop(null);
+    }
+  }
   useEffect(() => {
-    api.whoopSummary().then(setWhoop).catch(() => setWhoop(null));
+    loadWhoop();
   }, []);
+
+  async function onConnectWhoop() {
+    setWhoopBusy(true);
+    setWhoopMsg(null);
+    try {
+      const res = await connectWhoop();
+      if (!res.ok) setWhoopMsg(res.message);
+      await loadWhoop();
+    } catch (e) {
+      setWhoopMsg(`Couldn't open WHOOP login: ${String(e)}`);
+    } finally {
+      setWhoopBusy(false);
+    }
+  }
+
+  async function onDisconnectWhoop() {
+    setWhoopBusy(true);
+    try {
+      await disconnectWhoop();
+    } finally {
+      await loadWhoop();
+      setWhoopBusy(false);
+    }
+  }
 
   function changeSource(next: HrSource) {
     if (next === hrSource) return;
@@ -102,7 +150,34 @@ export default function SetupScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Card title="Heart rate · Whoop">
+      <Card title="Whoop account">
+        <View style={styles.row}>
+          <View
+            style={[
+              styles.dot,
+              { backgroundColor: whoopMode === "live" ? colors.ok : whoopMode === "offline" ? colors.error : colors.muted },
+            ]}
+          />
+          <Text style={styles.status}>
+            {whoopShared ? "Using the laptop's shared Whoop login" : WHOOP_MODE_TEXT[whoopMode ?? "loading"]}
+          </Text>
+          {whoopBusy && <ActivityIndicator size="small" />}
+        </View>
+        {whoopMsg && <Text style={styles.error}>{whoopMsg}</Text>}
+        {(whoopMode === "not_connected" || whoopShared) && (
+          <Button
+            label={whoopShared ? "Connect my own Whoop" : "Connect Whoop account"}
+            onPress={onConnectWhoop}
+            disabled={whoopBusy}
+          />
+        )}
+        {whoopMode === "live" && !whoopShared && (
+          <Button label="Disconnect Whoop account" variant="secondary" onPress={onDisconnectWhoop} disabled={whoopBusy} />
+        )}
+        {whoopMode === "offline" && <Button label="Retry" variant="secondary" onPress={loadWhoop} />}
+      </Card>
+
+      <Card title="Live heart rate">
         <Segmented<HrSource> options={SOURCE_OPTIONS} value={hrSource} onChange={changeSource} />
 
         <View style={styles.row}>
@@ -182,7 +257,7 @@ export default function SetupScreen() {
         {mode === "hr" && whoop && whoop.hr_zones.length > 0 && (
           <View style={{ gap: spacing.sm }}>
             <Text style={styles.help}>
-              Your Whoop zones{whoop.mode === "live" ? "" : " (sample data until Whoop is connected on the backend)"}:
+              Your Whoop zones{whoop.mode === "live" ? "" : " (sample data)"}:
             </Text>
             <View style={styles.chips}>
               {whoop.hr_zones.map((z) => {
