@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Hackathon App",
-    "slug": "hackathon-app",
+    "slug": "bpm",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -20,6 +20,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "dbe17b9b-3c76-46e0-9684-40e8f975e7e0"
+      }
+    },
+    "owner": "bpm-emergent"
   }
 }
