@@ -9,6 +9,7 @@ services:
     plan: free
     region: ohio # next to the Neon database (AWS us-east-2)
     rootDir: backend
+    branch: render # deploys only when you update the render branch (a copy of main)
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health

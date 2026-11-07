@@ -20,7 +20,8 @@ request wakes it and takes ~30-60 s. Open the app a minute before a demo.
    Treat it like a password. The backend creates its table on first use.
 
 ## 2. Backend (Render)
-The branch Render deploys must be on GitHub (default: `main`).
+Render deploys the **`render`** branch (`branch:` in `render.yaml`), a copy of `main`. To ship a new
+version: merge into `main`, then update `render` (see the end of this file).
 1. Sign up at **https://render.com** with GitHub and allow access to this repo.
 2. **New → Blueprint**, pick this repo. Render reads `render.yaml` and asks for the secret values:
 
@@ -63,4 +64,7 @@ Each phone gets its own logins (keyed by an anonymous per-install id).
 - Live heart rate from the laptop relay (`/live/hr`) is shared by everyone using the backend.
   Fine for one runner; a phone build reading the band itself avoids the laptop entirely.
 - Logins made on the laptop (files in `backend/`) aren't copied to the cloud; connect again in the app.
-- Changing code: push to the deployed branch and Render redeploys automatically.
+- Changing code: merge into `main`, then update the `render` branch; Render redeploys automatically:
+  ```bash
+  git checkout render && git merge --ff-only origin/main && git push && git checkout main
+  ```
