@@ -15,6 +15,9 @@ export type Zone = { min: number; max: number };
  */
 export type HrSource = "laptop" | "phone" | "sim";
 
+/** Where the music comes from: bundled tracks (smooth tempo shifts) or Spotify (real songs by tempo). */
+export type MusicSource = "builtin" | "spotify";
+
 export type Adjustment = { at: number; from: number; to: number; reason: string };
 
 type SessionState = {
@@ -25,6 +28,7 @@ type SessionState = {
   hrSource: HrSource;
   /** Simulated cadence + pace instead of the phone's pedometer/GPS (for testing at a desk). */
   simMotion: boolean;
+  musicSource: MusicSource;
   startedAt: number | null;
 
   // Music engine output (written by engine/audio, read by UI)
@@ -37,6 +41,7 @@ type SessionState = {
   setZone: (mode: ZoneMode, zone: Zone) => void;
   setHrSource: (v: HrSource) => void;
   setSimMotion: (v: boolean) => void;
+  setMusicSource: (v: MusicSource) => void;
   setRunning: (running: boolean) => void;
   setTargetBpm: (bpm: number, reason: string) => void;
   setNowPlaying: (title: string, rate: number) => void;
@@ -49,6 +54,7 @@ export const useSession = create<SessionState>()((set, get) => ({
   paceZone: { min: 300, max: 360 }, // 5:00–6:00 /km
   hrSource: isExpoGo ? "laptop" : "phone",
   simMotion: false,
+  musicSource: "builtin",
   startedAt: null,
 
   targetBpm: 160,
@@ -63,6 +69,7 @@ export const useSession = create<SessionState>()((set, get) => ({
     set({ hrSource });
   },
   setSimMotion: (simMotion) => set({ simMotion }),
+  setMusicSource: (musicSource) => set({ musicSource }),
   setRunning: (running) =>
     set(
       running

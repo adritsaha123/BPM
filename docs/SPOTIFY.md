@@ -1,6 +1,6 @@
 # Spotify + live BPM sync
 
-The Music tab shows your **live heart rate next to the current song's tempo**, colors it
+The Spotify screen (setup → **Spotify music screen →**) shows your **live heart rate next to the current song's tempo**, colors it
 (green = in sync, amber = close, red = off), and picks songs from your library by tempo.
 
 **Coach mode** (on by default, Zone 3) uses the music to steer you into a heart rate zone:
@@ -28,6 +28,21 @@ isn't connected, they're estimated from a 190 max heart rate, and the screen say
 
 No Spotify credentials in `backend/.env`? Everything runs on a **mock library and player** (22 fake
 songs from 72 to 182 BPM that advance in real time), so the screen works without a Spotify account.
+
+## Spotify in workouts
+
+On the setup screen, **Music → Spotify** makes the workout loop play Spotify instead of the built-in tracks.
+The phone's controller (`mobile/src/engine/controller.ts`) still decides the target BPM from your zone
+(cadence-based, small steps, cooldown); `mobile/src/audio/spotifyOutput.ts` turns that into songs:
+
+- **Start:** plays the best match for the starting BPM (`POST /spotify/sync` with `target_bpm`, `play_now: true`).
+- **Target changes:** if the current song is 10+ BPM off the new target, switches now (at most once every 45 s);
+  otherwise the next song uses the new target.
+- **Near the end of each song:** queues the best match for the current target (Auto-DJ).
+- If Spotify can't play (no active device, no Premium, backend down), the workout falls back to the built-in
+  tracks and says why.
+
+The Spotify screen's own coach mode (heart rate ± 8 BPM) is separate and still works on its own.
 
 ## Can we speed songs up to match the heart rate?
 
@@ -66,7 +81,7 @@ Open **http://127.0.0.1:8000/spotify/login** in a browser on that laptop, sign i
 Tokens are saved to `backend/.spotify_tokens.json` (gitignored) and refresh automatically.
 
 Then open Spotify on your phone and start any song (the API controls an *active* Spotify device).
-Start the live heart rate stream (`python scripts/whoop_live_hr.py`, see WHOOP.md) and open the Music tab.
+Start the live heart rate stream (`python scripts/whoop_live_hr.py`, see WHOOP.md) and open the Spotify screen, or pick **Music → Spotify** on the setup screen and start a workout.
 
 ## 3. Endpoints
 

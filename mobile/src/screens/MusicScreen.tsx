@@ -420,7 +420,7 @@ function Button(props: { label: string; onPress: () => void; busy?: boolean; pri
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
-  container: { padding: spacing.lg, paddingTop: spacing.xl * 2, gap: spacing.md, paddingBottom: spacing.xl },
+  container: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
   title: { fontSize: 28, fontWeight: "700", color: colors.text },
   muted: { fontSize: 13, color: colors.muted },
   body: { fontSize: 16, color: colors.text },

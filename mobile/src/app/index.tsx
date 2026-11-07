@@ -2,7 +2,7 @@ import { Link, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
-import { api, type WhoopMode, type WhoopSummary } from "../api";
+import { api, type SpotifyMode, type WhoopMode, type WhoopSummary } from "../api";
 import { Button, Card, Segmented, Stepper } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { startWorkout } from "../engine/workout";
@@ -10,7 +10,7 @@ import { isExpoGo } from "../runtime";
 import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { useBio, type HrStatus } from "../store/bio";
-import { useSession, type HrSource, type ZoneMode } from "../store/session";
+import { useSession, type HrSource, type MusicSource, type ZoneMode } from "../store/session";
 import { colors, spacing } from "../theme";
 import { connectWhoop, disconnectWhoop } from "../whoopAuth";
 
@@ -43,6 +43,14 @@ const WHOOP_MODE_TEXT: Record<WhoopMode | "offline" | "loading", string> = {
   offline: "Can't reach the backend",
 };
 
+const SPOTIFY_MODE_TEXT: Record<SpotifyMode | "offline" | "loading", string> = {
+  loading: "",
+  live: "Spotify is connected.",
+  mock: "Using the demo music library (no Spotify keys on the backend).",
+  not_connected: "Spotify isn't connected: open http://127.0.0.1:8000/spotify/login on the laptop.",
+  offline: "Can't reach the backend.",
+};
+
 const SOURCE_OPTIONS: { value: HrSource; label: string }[] = [
   { value: "laptop", label: "Laptop relay" },
   ...(isExpoGo ? [] : [{ value: "phone" as const, label: "Phone BT" }]),
@@ -60,7 +68,9 @@ export default function SetupScreen() {
   const paceZone = useSession((s) => s.paceZone);
   const hrSource = useSession((s) => s.hrSource);
   const simMotion = useSession((s) => s.simMotion);
-  const { setMode, setZone, setHrSource, setSimMotion } = useSession.getState();
+  const musicSource = useSession((s) => s.musicSource);
+  const { setMode, setZone, setHrSource, setSimMotion, setMusicSource } = useSession.getState();
+  const [spotifyMode, setSpotifyMode] = useState<SpotifyMode | "offline" | null>(null);
 
   const [starting, setStarting] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -92,6 +102,14 @@ export default function SetupScreen() {
   useEffect(() => {
     loadWhoop();
   }, []);
+
+  useEffect(() => {
+    if (musicSource !== "spotify") return;
+    api
+      .spotifyStatus()
+      .then((r) => setSpotifyMode(r.mode))
+      .catch(() => setSpotifyMode("offline"));
+  }, [musicSource]);
 
   async function onConnectWhoop() {
     setWhoopBusy(true);
@@ -278,6 +296,30 @@ export default function SetupScreen() {
             </View>
           </View>
         )}
+      </Card>
+
+      <Card title="Music">
+        <Segmented<MusicSource>
+          options={[
+            { value: "builtin", label: "Built-in tracks" },
+            { value: "spotify", label: "Spotify" },
+          ]}
+          value={musicSource}
+          onChange={setMusicSource}
+        />
+        <Text style={styles.help}>
+          {musicSource === "builtin"
+            ? "Smoothly speeds the beat up or down to the exact BPM."
+            : `Plays songs from your Liked Songs at the target tempo, switching song by song. ${SPOTIFY_MODE_TEXT[spotifyMode ?? "loading"]}`}
+        </Text>
+        {musicSource === "spotify" && spotifyMode !== "offline" && (
+          <Text style={styles.help}>
+            Open Spotify on your phone and play any song first, so there's an active device to control.
+          </Text>
+        )}
+        <Link href="/music" style={styles.link}>
+          Spotify music screen →
+        </Link>
       </Card>
 
       {warnings.map((w) => (
