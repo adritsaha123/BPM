@@ -3,6 +3,7 @@
 - OAuth 2.0 (authorization code + rotating refresh token), one login per user.
   The default user (laptop login, scripts) saves to WHOOP_TOKEN_FILE (backend/.whoop_tokens.json);
   app users (identified by the X-User-Id header) save to .whoop_tokens.<user>.json. All gitignored.
+  With DATABASE_URL set (cloud), tokens go to Postgres instead (app/token_store.py).
 - Paginated reads for workouts, cycles (incl. step_count), recovery and body measurements.
 - Mock mode: with WHOOP_CLIENT_ID / WHOOP_CLIENT_SECRET blank, every read returns realistic
   sample data in the same shape, so teammates can build without a WHOOP account.
@@ -14,7 +15,6 @@ see scripts/whoop_live_hr.py and routes/live.py.
 
 from __future__ import annotations
 
-import json
 import random
 import re
 import secrets
@@ -26,6 +26,7 @@ from urllib.parse import urlencode
 
 import httpx
 
+from app import token_store
 from app.config import get_settings
 
 AUTH_URL = "https://api.prod.whoop.com/oauth/oauth2/auth"
@@ -115,24 +116,13 @@ def _token_path(user: str = DEFAULT_USER) -> Path:
 
 
 def load_tokens(user: str = DEFAULT_USER) -> dict | None:
-    path = _token_path(user)
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        return None
+    return token_store.load(f"whoop:{valid_user_id(user)}", _token_path(user))
 
 
 def save_tokens(tokens: dict, user: str = DEFAULT_USER) -> dict:
     tokens = dict(tokens)
     tokens["expires_at"] = time.time() + int(tokens.get("expires_in", 3600)) - 60
-    path = _token_path(user)
-    path.write_text(json.dumps(tokens, indent=2))
-    try:
-        path.chmod(0o600)
-    except OSError:
-        pass
+    token_store.save(f"whoop:{valid_user_id(user)}", _token_path(user), tokens)
     return tokens
 
 
@@ -157,7 +147,7 @@ def exchange_code(code: str, user: str = DEFAULT_USER) -> dict:
 
 def disconnect(user: str = DEFAULT_USER) -> None:
     """Forget this user's WHOOP login."""
-    _token_path(user).unlink(missing_ok=True)
+    token_store.delete(f"whoop:{valid_user_id(user)}", _token_path(user))
     _clear_cache(user)
 
 

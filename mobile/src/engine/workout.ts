@@ -6,7 +6,7 @@ import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { isHrFresh, useBio } from "../store/bio";
 import { useSession } from "../store/session";
-import { decide, initialBpm } from "./controller";
+import { decide, initialBpm, zoneError } from "./controller";
 
 /**
  * The core loop, outside React so it keeps running with the screen locked:
@@ -26,7 +26,7 @@ function tick() {
 
   const bio = useBio.getState();
   const session = useSession.getState();
-  const decision = decide({
+  const input = {
     now,
     mode: session.mode,
     zone: session.mode === "hr" ? session.hrZone : session.paceZone,
@@ -35,7 +35,12 @@ function tick() {
     paceSecPerKm: bio.paceSecPerKm,
     currentBpm: session.targetBpm,
     lastChangeAt,
-  });
+  };
+  // Song energy follows where we are vs the zone (Spotify picks high-energy songs to push you up).
+  const err = zoneError(input);
+  if (err != null) music.setIntensity(err > 0 ? "push" : err < 0 ? "ease" : "hold");
+
+  const decision = decide(input);
   if (!decision) return;
 
   lastChangeAt = now;

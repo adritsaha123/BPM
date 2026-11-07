@@ -12,7 +12,7 @@ import { whoopHr } from "../sources/whoopBle";
 import { useBio, type HrStatus } from "../store/bio";
 import { useSession, type HrSource, type MusicSource, type ZoneMode } from "../store/session";
 import { colors, spacing } from "../theme";
-import { connectWhoop, disconnectWhoop } from "../whoopAuth";
+import { connectSpotify, connectWhoop, disconnectSpotify, disconnectWhoop } from "../accounts";
 
 const STATUS_TEXT: Record<Exclude<HrSource, "sim">, Record<HrStatus, string>> = {
   phone: {
@@ -47,7 +47,7 @@ const SPOTIFY_MODE_TEXT: Record<SpotifyMode | "offline" | "loading", string> = {
   loading: "",
   live: "Spotify is connected.",
   mock: "Using the demo music library (no Spotify keys on the backend).",
-  not_connected: "Spotify isn't connected: open http://127.0.0.1:8000/spotify/login on the laptop.",
+  not_connected: "Spotify isn't connected yet.",
   offline: "Can't reach the backend.",
 };
 
@@ -71,6 +71,9 @@ export default function SetupScreen() {
   const musicSource = useSession((s) => s.musicSource);
   const { setMode, setZone, setHrSource, setSimMotion, setMusicSource } = useSession.getState();
   const [spotifyMode, setSpotifyMode] = useState<SpotifyMode | "offline" | null>(null);
+  const [spotifyShared, setSpotifyShared] = useState(false); // borrowing the laptop's login
+  const [spotifyBusy, setSpotifyBusy] = useState(false);
+  const [spotifyMsg, setSpotifyMsg] = useState<string | null>(null);
 
   const [starting, setStarting] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -103,13 +106,42 @@ export default function SetupScreen() {
     loadWhoop();
   }, []);
 
+  async function loadSpotify() {
+    try {
+      const r = await api.spotifyStatus();
+      setSpotifyMode(r.mode);
+      setSpotifyShared(Boolean(r.shared));
+    } catch {
+      setSpotifyMode("offline");
+    }
+  }
   useEffect(() => {
-    if (musicSource !== "spotify") return;
-    api
-      .spotifyStatus()
-      .then((r) => setSpotifyMode(r.mode))
-      .catch(() => setSpotifyMode("offline"));
+    if (musicSource === "spotify") loadSpotify();
   }, [musicSource]);
+
+  async function onConnectSpotify() {
+    setSpotifyBusy(true);
+    setSpotifyMsg(null);
+    try {
+      const res = await connectSpotify();
+      if (!res.ok) setSpotifyMsg(res.message);
+      await loadSpotify();
+    } catch (e) {
+      setSpotifyMsg(`Couldn't open Spotify login: ${String(e)}`);
+    } finally {
+      setSpotifyBusy(false);
+    }
+  }
+
+  async function onDisconnectSpotify() {
+    setSpotifyBusy(true);
+    try {
+      await disconnectSpotify();
+    } finally {
+      await loadSpotify();
+      setSpotifyBusy(false);
+    }
+  }
 
   async function onConnectWhoop() {
     setWhoopBusy(true);
@@ -310,8 +342,26 @@ export default function SetupScreen() {
         <Text style={styles.help}>
           {musicSource === "builtin"
             ? "Smoothly speeds the beat up or down to the exact BPM."
-            : `Plays songs from your Liked Songs at the target tempo, switching song by song. ${SPOTIFY_MODE_TEXT[spotifyMode ?? "loading"]}`}
+            : `Plays songs from your Liked Songs at the target tempo, switching song by song. ${
+                spotifyShared ? "Using the laptop's shared Spotify login." : SPOTIFY_MODE_TEXT[spotifyMode ?? "loading"]
+              }`}
         </Text>
+        {musicSource === "spotify" && (
+          <>
+            {spotifyMsg && <Text style={styles.error}>{spotifyMsg}</Text>}
+            {(spotifyMode === "not_connected" || spotifyShared) && (
+              <Button
+                label={spotifyShared ? "Connect my own Spotify" : "Connect Spotify"}
+                onPress={onConnectSpotify}
+                disabled={spotifyBusy}
+              />
+            )}
+            {spotifyMode === "live" && !spotifyShared && (
+              <Button label="Disconnect Spotify" variant="secondary" onPress={onDisconnectSpotify} disabled={spotifyBusy} />
+            )}
+            {spotifyMode === "offline" && <Button label="Retry" variant="secondary" onPress={loadSpotify} />}
+          </>
+        )}
         {musicSource === "spotify" && spotifyMode !== "offline" && (
           <Text style={styles.help}>
             Open Spotify on your phone and play any song first, so there's an active device to control.
@@ -331,9 +381,6 @@ export default function SetupScreen() {
       <Button label={starting ? "Starting…" : "Start workout"} onPress={onStart} disabled={!canStart || starting} />
       {!canStart && <Text style={styles.help}>Waiting for live heart rate, or pick Simulated to start now.</Text>}
 
-      <Link href="/ai" style={styles.link}>
-        AI demo →
-      </Link>
     </ScrollView>
   );
 }

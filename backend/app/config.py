@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-5-5"
     cors_origins: str = "*"
 
+    # Postgres for OAuth tokens (cloud deploy, e.g. Neon). Blank = JSON files next to the backend.
+    database_url: str = ""
+
     # WHOOP Developer API (developer-dashboard.whoop.com). Blank = mock WHOOP data.
     whoop_client_id: str = ""
     whoop_client_secret: str = ""

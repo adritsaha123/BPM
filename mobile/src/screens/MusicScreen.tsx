@@ -380,6 +380,7 @@ export default function MusicScreen() {
                 </Text>
                 <Text style={styles.muted} numberOfLines={1}>
                   {artistLine(t)}
+                  {t.energy != null ? ` · energy ${Math.round(t.energy * 100)}%` : ""}
                 </Text>
               </View>
               <Text style={[styles.matchBpm, { color: statusColor(t.match) }]}>

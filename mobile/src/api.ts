@@ -44,7 +44,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export type WhoopMode = "live" | "mock" | "not_connected";
 export type SpotifyMode = "live" | "mock" | "not_connected";
 export type Health = { status: string; ai: "live" | "mock"; whoop?: WhoopMode; spotify?: SpotifyMode };
-export type Item = { id: number; title: string; notes: string };
 
 // ---- WHOOP (history) + live heart rate. See docs/WHOOP.md ----
 
@@ -64,16 +63,6 @@ export type WhoopWorkout = {
   pace_min_per_km: number | null;
   zone_minutes: Record<string, number>;
   score_state: string | null;
-};
-
-export type WhoopCycle = {
-  id: number;
-  start: string;
-  end: string | null;
-  strain: number | null;
-  avg_hr: number | null;
-  max_hr: number | null;
-  step_count: number | null;
 };
 
 export type WhoopSummary = {
@@ -123,8 +112,16 @@ export type SpotifyTrack = {
   image: string | null;
   duration_ms: number | null;
   tempo: number | null;
+  /** 0-1 from ReccoBeats; null when unknown */
+  energy?: number | null;
+  danceability?: number | null;
+  /** ranking score from /spotify/match and /sync (lower = better fit) */
+  fit_score?: number;
   match?: TempoMatch | null;
 };
+
+/** push = favor fast, high-energy songs; ease = calmer songs; hold = in the zone */
+export type Intensity = "push" | "hold" | "ease";
 
 export type SpotifyPlaylist = {
   id: string; // "liked" = Liked Songs
@@ -168,6 +165,7 @@ export type MatchList = {
   target_bpm: number | null;
   target_source: TargetSource;
   coach: Coach | null;
+  intensity: Intensity | null;
   playlist_id: string;
   tracks: SpotifyTrack[];
   no_tempo_count: number;
@@ -179,6 +177,8 @@ export type SyncOptions = {
   fallbackBpm?: number;
   /** 1-5: coach mode toward this heart rate zone */
   zone?: number | null;
+  /** song energy to favor; defaults to the coach direction in coach mode */
+  intensity?: Intensity | null;
   playNow?: boolean;
 };
 
@@ -193,15 +193,6 @@ function query(params: Record<string, string | number | null | undefined>): stri
 
 export const api = {
   health: () => request<Health>("/health"),
-  chat: (message: string, system?: string) =>
-    request<{ reply: string }>("/ai/chat", {
-      method: "POST",
-      body: JSON.stringify({ message, system }),
-    }),
-  listItems: () => request<Item[]>("/items"),
-  createItem: (title: string, notes = "") =>
-    request<Item>("/items", { method: "POST", body: JSON.stringify({ title, notes }) }),
-  deleteItem: (id: number) => request<void>(`/items/${id}`, { method: "DELETE" }),
 
   whoopStatus: () => request<{ mode: WhoopMode; login_url: string; user: string; shared?: boolean }>("/whoop/status"),
   /** Forget this user's WHOOP login on the backend. */
@@ -210,16 +201,17 @@ export const api = {
   whoopLoginUrl: async (returnTo: string) =>
     `${API_URL}/whoop/login?${new URLSearchParams({ user: await getUserId(), return_to: returnTo })}`,
   whoopSummary: (days = 30) => request<WhoopSummary>(`/whoop/summary?days=${days}`),
-  whoopWorkouts: (days = 30, runsOnly = false) =>
-    request<WhoopWorkout[]>(`/whoop/workouts?days=${days}&runs_only=${runsOnly}`),
-  whoopCycles: (days = 30) => request<WhoopCycle[]>(`/whoop/cycles?days=${days}`),
   /** Latest live bpm from the band (poll every 1-2s). bpm is null until the BLE script runs. */
   liveHr: (windowS = 30) => request<LiveHr>(`/live/hr?window_s=${windowS}`),
 
-  spotifyStatus: () => request<{ mode: SpotifyMode; login_url: string }>("/spotify/status"),
+  spotifyStatus: () =>
+    request<{ mode: SpotifyMode; login_url: string; user: string; shared?: boolean }>("/spotify/status"),
+  /** Browser URL that starts Spotify login for this user and returns to `returnTo` (an app URL). */
+  spotifyLoginUrl: async (returnTo: string) =>
+    `${API_URL}/spotify/login?${new URLSearchParams({ user: await getUserId(), return_to: returnTo })}`,
+  /** Forget this user's Spotify login on the backend. */
+  spotifyDisconnect: () => request<void>("/spotify/connection", { method: "DELETE" }),
   spotifyPlaylists: () => request<SpotifyPlaylist[]>("/spotify/playlists"),
-  spotifyPlaylistTracks: (playlistId: string) =>
-    request<SpotifyTrack[]>(`/spotify/playlists/${encodeURIComponent(playlistId)}/tracks`),
   /** Heart rate zones coach mode can aim for (from WHOOP, or estimated). */
   spotifyZones: () => request<HrZones>("/spotify/zones"),
   /** Current song + tempo + heart rate + coach target + match. Poll every 1-2s.
@@ -248,6 +240,7 @@ export const api = {
           target_bpm: opts.targetBpm,
           fallback_bpm: opts.fallbackBpm,
           zone: opts.zone ?? null,
+          intensity: opts.intensity ?? null,
           play_now: opts.playNow ?? false,
         }),
       },
@@ -256,6 +249,4 @@ export const api = {
     request<void>("/spotify/play", { method: "POST", body: JSON.stringify({ uris }) }),
   spotifyPause: () => request<void>("/spotify/pause", { method: "POST" }),
   spotifyNext: () => request<void>("/spotify/next", { method: "POST" }),
-  spotifyQueue: (uri: string) =>
-    request<void>("/spotify/queue", { method: "POST", body: JSON.stringify({ uri }) }),
 };

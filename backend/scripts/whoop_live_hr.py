@@ -43,9 +43,10 @@ async def find_device(name_hint: str, scan_s: float):
 
 async def stream(args: argparse.Namespace) -> int:
     device = await find_device(args.name, args.scan)
-    if device is None:
-        print("No heart rate monitor found. Is Heart Rate Broadcast on (blue light) and the band nearby?")
-        return 1
+    while device is None:  # keep looking: broadcast may be switched on after this starts
+        print("No heart rate monitor found yet. Is Heart Rate Broadcast on (blue light) and the band nearby?")
+        print("Scanning again (Ctrl+C to stop)...")
+        device = await find_device(args.name, args.scan)
 
     api = None if args.no_post else httpx.AsyncClient(base_url=args.api, timeout=3)
     source = device.name or "ble"
@@ -87,7 +88,7 @@ def main() -> int:
     )
     parser.add_argument("--api", default="http://localhost:8000", help="Backend base URL")
     parser.add_argument("--name", default="whoop", help="Pick the device whose name contains this")
-    parser.add_argument("--scan", type=float, default=10, help="Seconds to scan")
+    parser.add_argument("--scan", type=float, default=15, help="Seconds per scan (repeats until found)")
     parser.add_argument("--no-post", action="store_true", help="Print only, don't send to the backend")
     try:
         return asyncio.run(stream(parser.parse_args()))

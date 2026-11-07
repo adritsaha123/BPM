@@ -4,6 +4,7 @@ anthropic==2.6.0
 pydantic-settings==2.16.2
 python-dotenv==1.2.4
 httpx==0.28.1
+psycopg[binary]==3.3.8  # token storage in the cloud (DATABASE_URL); unused on the laptop
 
 # dev
 pytest==9.2.0
