@@ -3,11 +3,13 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import AIDemoScreen from "./src/screens/AIDemoScreen";
+import AppleMusicScreen from "./src/screens/AppleMusicScreen";
 import MusicScreen from "./src/screens/MusicScreen";
 import { colors, spacing } from "./src/theme";
 
 const TABS = [
-  { key: "music", label: "Music", Screen: MusicScreen },
+  { key: "music", label: "Spotify", Screen: MusicScreen },
+  { key: "apple", label: "Apple Music", Screen: AppleMusicScreen },
   { key: "ai", label: "AI", Screen: AIDemoScreen },
 ] as const;
 

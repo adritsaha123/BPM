@@ -7,7 +7,14 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.willdupont.bpm",
+      "infoPlist": {
+        "NSAppleMusicUsageDescription": "BPM plays songs from your Apple Music library and adjusts their tempo to match your heart rate.",
+        "UIBackgroundModes": [
+          "audio"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {

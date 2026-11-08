@@ -1,6 +1,6 @@
 # Spotify + live BPM sync
 
-The Music tab shows your **live heart rate next to the current song's tempo**, colors it
+The Spotify tab shows your **live heart rate next to the current song's tempo**, colors it
 (green = in sync, amber = close, red = off), and picks songs from your library by tempo.
 
 **Coach mode** (on by default, Zone 3) uses the music to steer you into a heart rate zone:
@@ -34,6 +34,8 @@ songs from 72 to 182 BPM that advance in real time), so the screen works without
 **Not with Spotify.** The Web API has no playback-speed control, the app never receives the audio
 (Spotify plays it), and Spotify's developer terms forbid apps that alter Spotify content. So we
 **pick songs that match** instead, counting half/double time (an 85 BPM song fits a heart rate of 170).
+
+The **Apple Music** tab can: it speeds songs up or down to your heart rate. See [APPLE_MUSIC.md](APPLE_MUSIC.md).
 
 Each match still reports `speed_to_match`: the rate the song would need to lock in exactly
 (e.g. `1.04`). That is what a speed-up feature would use if we play audio we own or have licensed

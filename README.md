@@ -90,6 +90,7 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 ## Where to change things
 - **AI behavior / prompts:** `backend/app/llm.py` (switch providers here, nothing else changes)
 - **Spotify + live BPM sync (song tempo vs heart rate):** `backend/app/spotify.py`, `tempo.py`, `routes/spotify.py`, `mobile/src/screens/MusicScreen.tsx`. Setup in `docs/SPOTIFY.md`
+- **Apple Music + speed control (song speed follows heart rate):** `mobile/modules/apple-music/` (native iOS module), `mobile/src/screens/AppleMusicScreen.tsx`, `backend/app/coach.py`, `routes/coach.py`. Needs the iPhone build: `docs/APPLE_MUSIC.md`
 - **WHOOP history + live heart rate:** `backend/app/whoop.py`, `routes/whoop.py`, `routes/live.py`. Setup in `docs/WHOOP.md`
 - **New endpoint:** copy `backend/app/routes/items.py`
 - **New screen:** add to `mobile/src/screens/`, render it in `mobile/App.tsx`

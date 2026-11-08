@@ -6,7 +6,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app import spotify, tempo
+from app import coach, spotify, tempo
 from app.config import get_settings
 from app.main import app
 from app.routes import spotify as spotify_routes
@@ -317,9 +317,9 @@ def default_zones(monkeypatch):
     """WHOOP not connected: zones estimated from a 190 max HR. Zone 3 = 133-152, middle 142.5."""
 
     def not_connected(*a, **k):
-        raise spotify_routes.whoop.WhoopNotConnectedError("no whoop")
+        raise coach.whoop.WhoopNotConnectedError("no whoop")
 
-    monkeypatch.setattr(spotify_routes.whoop, "summary", not_connected)
+    monkeypatch.setattr(coach.whoop, "summary", not_connected)
 
 
 def test_coach_target_leads_one_step_toward_the_zone():
