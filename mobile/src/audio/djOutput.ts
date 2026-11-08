@@ -206,6 +206,13 @@ export const djOutput = {
     if (!paused) blendToNext(SWITCH_FADE_MS); // while paused: switch on resume
   },
 
+  /** Same tempo, different song: blend into the next pick now instead of waiting for this one to end. */
+  rotate(): boolean {
+    if (!deck || paused || busy || fadeTimer) return false;
+    blendToNext(NEXT_FADE_MS);
+    return true;
+  },
+
   /** Pause the music; the coach keeps tracking BPM, and resume() plays at the new tempo. */
   pause() {
     if (paused) return;

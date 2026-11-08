@@ -6,7 +6,19 @@ import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { isHrFresh, useBio } from "../store/bio";
 import { useSession } from "../store/session";
-import { CONTROL, DJ_CONTROL, SPOTIFY_CONTROL, decide, initialBpm, zoneError } from "./controller";
+import {
+  BUILTIN_ROTATE,
+  CONTROL,
+  DJ_CONTROL,
+  DJ_ROTATE,
+  SPOTIFY_CONTROL,
+  decide,
+  initialBpm,
+  shouldRotate,
+  zoneError,
+  type HrSample,
+  type RotateConfig,
+} from "./controller";
 
 /**
  * The core loop, outside React so it keeps running with the screen locked:
@@ -19,9 +31,16 @@ const TICK_MS = 1000;
 const CONTROLS = { builtin: CONTROL, spotify: SPOTIFY_CONTROL, dj: DJ_CONTROL };
 const control = () => CONTROLS[useSession.getState().musicSource];
 
+/** Steady HR → a different song at the same tempo. Spotify already changes songs at each song's end. */
+const ROTATE: Record<keyof typeof CONTROLS, RotateConfig | null> = { builtin: BUILTIN_ROTATE, spotify: null, dj: DJ_ROTATE };
+const HR_HISTORY_MS = 90_000;
+
 let unsubscribe: (() => void) | null = null;
 let lastTick = 0;
 let lastChangeAt = 0;
+let hrHistory: HrSample[] = []; // ~1 sample/s of smoothed HR, for steadiness
+let songStartedAt = 0;
+let lastTitle: string | null = null;
 
 function tick() {
   const now = Date.now();
@@ -40,16 +59,34 @@ function tick() {
     currentBpm: session.targetBpm,
     lastChangeAt,
   };
+  if (input.hrFresh && bio.hr != null) {
+    hrHistory.push({ t: now, bpm: bio.hr });
+    hrHistory = hrHistory.filter((s) => now - s.t <= HR_HISTORY_MS);
+  }
+  if (session.trackTitle !== lastTitle) {
+    lastTitle = session.trackTitle; // a new song started (end of song, tempo switch, or rotation)
+    songStartedAt = now;
+  }
+
   // Song energy follows where we are vs the zone (Spotify picks high-energy songs to push you up).
   const err = zoneError(input, control());
   if (err != null) music.setIntensity(err > 0 ? "push" : err < 0 ? "ease" : "hold");
 
   const decision = decide(input, control());
-  if (!decision) return;
+  if (!decision) return maybeRotate(now, session.targetBpm);
 
   lastChangeAt = now;
   session.setTargetBpm(decision.bpm, decision.reason);
   music.setBpm(decision.bpm);
+}
+
+/** HR has held steady for a while and the song has had its turn: play a different one at this tempo. */
+function maybeRotate(now: number, bpm: number) {
+  const config = ROTATE[useSession.getState().musicSource];
+  if (!config) return;
+  if (!shouldRotate({ now, hrSamples: hrHistory, songStartedAt, lastBpmChangeAt: lastChangeAt }, config)) return;
+  songStartedAt = now; // whether or not a switch starts, wait a full song before asking again
+  music.rotate(bpm);
 }
 
 /** Backend errors look like `404 Not Found: {"detail":"..."}`; keep just the detail. */
@@ -85,6 +122,9 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
   }
 
   lastChangeAt = Date.now(); // give the body one cooldown period before the first nudge
+  hrHistory = [];
+  songStartedAt = Date.now();
+  lastTitle = useSession.getState().trackTitle;
   lastTick = 0;
   unsubscribe?.();
   unsubscribe = useBio.subscribe(tick);

@@ -74,6 +74,19 @@ export const musicPlayer = {
     crossfadeTo(bestTrackFor(bpm), bpm);
   },
 
+  /**
+   * Same tempo, different track: crossfade to another track that can reach `bpm` within the normal
+   * stretch range. Returns false when no other track fits (e.g. only one loop near this tempo).
+   */
+  rotate(bpm: number): boolean {
+    if (!active || paused || fading) return false;
+    const current = active.track.id;
+    const others = TRACKS.filter((t) => t.id !== current && inStretchRange(rateFor(bpm, t)));
+    if (others.length === 0) return false;
+    crossfadeTo(bestTrackFor(bpm, others), bpm);
+    return true;
+  },
+
   pause() {
     paused = true;
     finishFade();

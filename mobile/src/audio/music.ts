@@ -35,6 +35,16 @@ export const music = {
 
   /** Pause the music; the workout and coach keep running, so resume() plays at the current target.
    *  Spotify goes through the backend, so it can fail (e.g. Spotify closed): that throws. */
+  /** Switch to a different song at the same tempo (the heart rate is holding steady).
+   *  Spotify already changes songs at the end of each one, and a mid-song cut there is abrupt on
+   *  iPhone, so it's left alone. Returns whether a switch started. */
+  rotate(bpm: number): boolean {
+    if (useSession.getState().musicPaused) return false;
+    if (source() === "dj") return djOutput.rotate();
+    if (source() === "builtin") return musicPlayer.rotate(bpm);
+    return false;
+  },
+
   async pause() {
     if (source() === "spotify") await spotifyOutput.pause();
     else if (source() === "dj") djOutput.pause();

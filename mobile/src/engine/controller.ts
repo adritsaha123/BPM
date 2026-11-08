@@ -81,6 +81,52 @@ export function decide(input: ControlInput, control: Control = CONTROL): Control
   return { bpm, reason: `${what} ${err > 0 ? "below" : "above"} zone` };
 }
 
+// ---- Song rotation while the heart rate holds steady ----
+//
+// The BPM loop above only changes tempo when HR leaves the zone, so a runner who settles in hears
+// the same song (built-in tracks loop forever). When HR stays steady we switch to a different song
+// at the same tempo: variety without changing the beat the runner is locked to.
+
+export type RotateConfig = {
+  /** HR must have been tracked over (most of) this window... */
+  steadyWindowMs: number;
+  /** ...and stayed within this many bpm (max - min) to count as steady. */
+  steadySpreadBpm: number;
+  /** Only rotate a song that has played at least this long. */
+  minSongMs: number;
+};
+
+/** Built-in tracks are short loops: rotate fairly often. */
+export const BUILTIN_ROTATE: RotateConfig = { steadyWindowMs: 60_000, steadySpreadBpm: 6, minSongMs: 75_000 };
+/** DJ songs are full songs that already change at the end: only cut long ones short. */
+export const DJ_ROTATE: RotateConfig = { steadyWindowMs: 60_000, steadySpreadBpm: 6, minSongMs: 150_000 };
+
+export type HrSample = { t: number; bpm: number };
+
+/** True when HR samples cover ≥80% of the window and stay within the allowed spread. */
+export function isHrSteady(samples: HrSample[], now: number, config: RotateConfig): boolean {
+  const recent = samples.filter((s) => now - s.t <= config.steadyWindowMs);
+  if (recent.length < 2) return false;
+  const covered = now - Math.min(...recent.map((s) => s.t));
+  if (covered < config.steadyWindowMs * 0.8) return false;
+  const bpms = recent.map((s) => s.bpm);
+  return Math.max(...bpms) - Math.min(...bpms) <= config.steadySpreadBpm;
+}
+
+export type RotateInput = {
+  now: number;
+  hrSamples: HrSample[];
+  songStartedAt: number;
+  /** Last tempo change: while the controller is still steering, don't also swap songs. */
+  lastBpmChangeAt: number;
+};
+
+export function shouldRotate(input: RotateInput, config: RotateConfig): boolean {
+  if (input.now - input.songStartedAt < config.minSongMs) return false;
+  if (input.now - input.lastBpmChangeAt < config.steadyWindowMs) return false;
+  return isHrSteady(input.hrSamples, input.now, config);
+}
+
 /** Starting BPM: match the runner's current cadence if we have it. */
 export function initialBpm(cadence: number | null, control: Control = CONTROL): number {
   return clamp(cadence && cadence > 100 ? Math.round(cadence) : 160, control.minBpm, control.maxBpm);
