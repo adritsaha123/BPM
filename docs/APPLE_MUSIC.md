@@ -68,6 +68,18 @@ so there's nothing to run through an equalizer. Apps like djay get that through 
    ```
    Pick your iPhone from the list. It starts the dev server too, and the app finds the backend on
    the laptop by itself as long as the phone is on the same Wi-Fi.
+
+   **Or from Xcode:**
+   1. Start the dev server and leave it running: `cd mobile && npx expo start`. Xcode's ▶ makes a
+      debug build, which loads the app's code from the dev server.
+   2. `open ios/HackathonApp.xcworkspace`. Open the `.xcworkspace`, not the `.xcodeproj`. If
+      `mobile/ios` doesn't exist yet, run `npx expo prebuild --platform ios` first. It also
+      changes the `ios`/`android` scripts in `package.json`; don't commit that.
+   3. Click **HackathonApp** at the top of the file list → **Signing & Capabilities** → **Team**:
+      your Personal Team.
+   4. Pick your iPhone in the device menu at the top of the window and press **▶** (⌘R).
+   5. When the phone asks to find devices on your local network, tap **Allow**. That's how it
+      reaches the laptop. If it then shows a red error screen, press ⌘R again.
 5. First time only, on the iPhone: **Settings → General → VPN & Device Management →** your Apple ID
    **→ Trust**. Then open the app.
 6. **Apple Music** tab → **Connect Apple Music** → **Allow**.
