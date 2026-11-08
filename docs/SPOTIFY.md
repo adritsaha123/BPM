@@ -1,5 +1,9 @@
 # Spotify + live BPM sync
 
+> **The app doesn't use Spotify anymore.** Since November 2026 the workout music comes only from an
+> Apple Music playlist ([APPLE_MUSIC.md](APPLE_MUSIC.md)). The backend side described here is
+> still in the repo; the app's player and screens for it were removed.
+
 The Spotify screen (setup → **Spotify music screen →**) shows your **live heart rate next to the current song's tempo**, colors it
 (green = in sync, amber = close, red = off), and picks songs from your library by tempo.
 

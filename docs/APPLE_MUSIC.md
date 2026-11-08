@@ -1,26 +1,30 @@
 # Apple Music + speed control
 
-The **Apple Music** music source plays songs from your Apple Music library and **changes their speed so the
-beat follows your heart rate**. iOS keeps the pitch the same when it changes the speed, so voices
-don't sound like chipmunks.
+The workout music comes from **one of your Apple Music playlists**, picked on the setup screen.
+The app **changes the songs' speed so the beat matches the target tempo**. iOS keeps the pitch the
+same when it changes the speed, so voices don't sound like chipmunks.
 
-- **Lock to my heart rate** (on by default): speed = target tempo ÷ song tempo, at most ±10% from
-  normal (you can pick ±5, ±10 or ±20%). It changes in 0.5% steps, so small heart rate wobbles
-  don't keep nudging it. Half and double time count: an 85 BPM song locks to a heart rate of 170.
-- **Coach me into a zone** works like Spotify coaching (see [SPOTIFY.md](SPOTIFY.md)). The
-  music aims a step faster or slower than your heart rate to steer you into the zone.
-- **Match my BPM** plays the library song that needs the smallest speed change, then queues the
-  29 next best, so music keeps going even if the app goes to sleep.
-- Colors in the song list: green = can lock within the max change, amber = within twice that,
-  red = too far off (pick another song).
+- **Only that playlist plays.** As soon as you pick it, the app looks up its songs' tempos. When
+  the first ones are known the setup screen says **Ready**; the rest keep loading in the
+  background, also during the run.
+- At the start it plays the playlist song that needs the smallest speed change and queues the
+  next 24 best, so music keeps going even if the app goes to sleep. Each new song is locked to
+  the target too.
+- Speed = target tempo ÷ song tempo, at most ±10% from normal, in 0.5% steps, so small changes
+  don't keep nudging it. Half and double time count: an 85 BPM song locks to a target of 170.
+- When the coach changes the target, the current song's speed follows. If the new target is more
+  than 10% away from it, the best-fitting song comes on instead.
+- When your heart rate holds steady for a while, a long song gives way to another one at the
+  same tempo, for variety.
+- Songs whose tempo can't be found are skipped.
 
 | Piece | Where |
 |---|---|
-| Player + speed (Apple's MediaPlayer framework) | `mobile/modules/apple-music/ios/AppleMusicModule.swift` (local Expo module) |
+| Player + speed + playlists (Apple's MediaPlayer framework) | `mobile/modules/apple-music/ios/AppleMusicModule.swift` (local Expo module) |
 | Its JavaScript side + types | `mobile/modules/apple-music/src/` |
-| Screen | `mobile/src/screens/AppleMusicScreen.tsx` |
+| Workout player (picks songs, sets the speed) | `mobile/src/audio/appleMusicOutput.ts` |
+| Playlist picker | `mobile/src/app/playlists.tsx`, opened from the setup screen (`mobile/src/app/index.tsx`) |
 | Song tempos by title + artist | `POST /tempo/lookup` → `backend/app/tempo.py` |
-| Heart rate + coach target | `GET /coach/target`, `GET /coach/zones` → `backend/app/coach.py` |
 
 ## Why Apple Music can change speed and Spotify can't
 
@@ -37,7 +41,7 @@ so there's nothing to run through an equalizer. Apps like djay get that through 
 - A **Mac with Xcode**. A free Apple ID is enough. The $99 developer program isn't needed, because
   this uses the MediaPlayer framework, not MusicKit.
 - It does **not** run in Expo Go, on the web, on Android or in the iOS Simulator (the Simulator
-  has no Music library). The Apple Music screen explains this instead of crashing, and a workout falls back to DJ mode.
+  has no Music library). The playlist screen says so instead of crashing.
 
 ## 1. One-time Mac setup
 
@@ -82,7 +86,9 @@ so there's nothing to run through an equalizer. Apps like djay get that through 
       reaches the laptop. If it then shows a red error screen, press ⌘R again.
 5. First time only, on the iPhone: **Settings → General → VPN & Device Management →** your Apple ID
    **→ Trust**. Then open the app.
-6. Setup screen → Music → **Apple Music** → "Apple Music library and tempos" → **Connect Apple Music** → **Allow**. Then pick Apple Music as the music source and start a workout: songs are chosen by tempo and sped up or slowed down (max ±10%) as the coach changes the target.
+6. Setup screen → **Music → Choose a playlist** → **Allow** Apple Music access → tap a playlist.
+   When the Music card says **Ready**, start the workout: songs from that playlist are chosen by
+   tempo and sped up or slowed down (max ±10%) as the coach changes the target.
 
 If the build stops with *"Signing … requires a development team"*: open
 `mobile/ios/*.xcworkspace` in Xcode, click the app target → **Signing & Capabilities** → Team =
@@ -94,14 +100,15 @@ With a free Apple ID the app stops opening after **7 days**. Run step 4 again to
 
 ## 3. Use it
 
-- The list shows your **200 most recently added songs** with their tempo. The first lookup takes a
-  few seconds per 25 songs. Results are saved in `backend/data/tempo_cache.json`, so it's quick
-  after that. **Look up 200 more** fetches older songs.
-- Tap a song to play it, or tap **Match my BPM**.
-- **Keep the app open on screen while running.** iOS pauses the app when the phone locks, and then
-  the speed stops following your heart rate (the music keeps playing at the last speed). While
-  music plays with the lock on, the app keeps the screen awake.
-- No band? Use the **simulate** buttons under the heart rate to fake one.
+- The playlist list shows your playlists A to Z (folders and empty playlists are left out). The app
+  remembers the one you pick.
+- The first time a song is looked up it takes about a second. The app looks up 10 songs first so
+  you can start sooner; the others follow in batches of 50. Results are saved in
+  `backend/data/tempo_cache.json`, so it's quick after that (the free cloud backend forgets them
+  when it restarts).
+- **Keep the app open on screen while running.** If iOS pauses the app, the speed stops following
+  the target (the music keeps playing at the last speed). The workout screen keeps the screen
+  awake.
 
 ## Where tempos come from
 
@@ -121,22 +128,20 @@ time, so they still work.
 
 ReccoBeats answers "too many requests, retry after 17 seconds" after about 40 requests in 10
 seconds. The backend asks it for 40 songs at a time and waits out a limit when it hits one. A
-lookup that failed isn't saved, so tapping **Try again** under the list retries it.
+lookup that failed isn't saved, so **Try again** on the setup screen retries it.
 
 ## Known issues
 
 - **iOS 26 speed bug.** Some people report that on iOS 26.0 the Music speed snaps back to normal,
-  or the audio gets noisy. The app puts the speed back when iOS resets it and shows *"iOS reset the
-  speed N×"*. If the speed won't stick, switch **Play through** to **Music app**, or update iOS.
-  Try it on your phone before the demo.
+  or the audio gets noisy. The app puts the speed back when iOS resets it (`getState` counts it in
+  `rateResets`). If the speed won't stick, update iOS; the native module can also play through the
+  Music app instead (`setPlayerKind("system")`). Try it on your phone before the demo.
 - Only songs in your library show up. Searching the whole Apple Music catalog would need MusicKit
   and the paid developer program.
 
 ## API
 
 ```
-GET  /coach/zones                              5 heart rate zones (WHOOP, or estimated)
-GET  /coach/target?fallback_bpm=125&zone=3     heart rate + the tempo to aim for (poll every 2 s)
 POST /tempo/lookup                             {"tracks": [{"id", "title", "artist", "duration_s", "library_bpm"}]}
                                                at most 50 -> {"tempos": {id: {"bpm", "source", "matched", "isrc"} | null}}
 ```

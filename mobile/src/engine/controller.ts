@@ -9,25 +9,13 @@ import type { Zone, ZoneMode } from "../store/session";
 
 export type Control = { minBpm: number; maxBpm: number; step: number; cooldownMs: number; deadband: number };
 
-/** DJ mode: songs are time-stretched, so small frequent nudges are smooth; kept in running tempo. */
-export const DJ_CONTROL: Control = {
+/** Songs are sped up or slowed down to the target, so small frequent nudges are smooth; kept in running tempo. */
+export const TEMPO_CONTROL: Control = {
   minBpm: 145,
   maxBpm: 185,
   step: 4, // bpm per adjustment
   cooldownMs: 20_000, // wait for HR to respond before nudging again
   deadband: 2, // ignore readings this close to the zone edge (bpm or sec/km)
-};
-
-/**
- * Spotify: tempo only changes when the song does, so a 4 BPM nudge usually waits for the next song
- * and gets lost. Bigger, less frequent steps, kept in running tempo (no slow songs).
- */
-export const SPOTIFY_CONTROL: Control = {
-  minBpm: 150,
-  maxBpm: 185,
-  step: 8,
-  cooldownMs: 60_000,
-  deadband: 2,
 };
 
 export type ControlInput = {
@@ -46,7 +34,7 @@ export type ControlDecision = { bpm: number; reason: string } | null;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** -1 = above zone (slow down), +1 = below zone (speed up), 0 = in zone, null = no data */
-export function zoneError(input: ControlInput, control: Control = DJ_CONTROL): -1 | 0 | 1 | null {
+export function zoneError(input: ControlInput, control: Control = TEMPO_CONTROL): -1 | 0 | 1 | null {
   const { mode, zone } = input;
   const deadband = control.deadband;
   if (mode === "hr") {
@@ -62,7 +50,7 @@ export function zoneError(input: ControlInput, control: Control = DJ_CONTROL): -
   return 0;
 }
 
-export function decide(input: ControlInput, control: Control = DJ_CONTROL): ControlDecision {
+export function decide(input: ControlInput, control: Control = TEMPO_CONTROL): ControlDecision {
   if (input.now - input.lastChangeAt < control.cooldownMs) return null;
   const err = zoneError(input, control);
   if (!err) return null;
@@ -87,8 +75,8 @@ export type RotateConfig = {
   minSongMs: number;
 };
 
-/** DJ songs are full songs that already change at the end: only cut long ones short. */
-export const DJ_ROTATE: RotateConfig = { steadyWindowMs: 60_000, steadySpreadBpm: 6, minSongMs: 150_000 };
+/** Songs already change at their end: only cut long ones short. */
+export const SONG_ROTATE: RotateConfig = { steadyWindowMs: 60_000, steadySpreadBpm: 6, minSongMs: 150_000 };
 
 export type HrSample = { t: number; bpm: number };
 
@@ -117,7 +105,7 @@ export function shouldRotate(input: RotateInput, config: RotateConfig): boolean 
 }
 
 /** Starting BPM: match the runner's current cadence if we have it. */
-export function initialBpm(cadence: number | null, control: Control = DJ_CONTROL): number {
+export function initialBpm(cadence: number | null, control: Control = TEMPO_CONTROL): number {
   return clamp(cadence && cadence > 100 ? Math.round(cadence) : 160, control.minBpm, control.maxBpm);
 }
 

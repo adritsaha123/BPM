@@ -2,6 +2,7 @@ import { NativeModule, requireOptionalNativeModule } from "expo";
 
 import type {
   AppleMusicModuleEvents,
+  AppleMusicPlaylist,
   AppleMusicSong,
   AppleMusicState,
   AuthorizationStatus,
@@ -15,6 +16,10 @@ declare class AppleMusicNativeModule extends NativeModule<AppleMusicModuleEvents
   requestAuthorization(): Promise<AuthorizationStatus>;
   /** library songs, most recently added first */
   getSongs(limit: number, offset: number): Promise<{ total: number; songs: AppleMusicSong[] }>;
+  /** playlists in the library, A to Z, without folders and empty ones */
+  getPlaylists(): Promise<AppleMusicPlaylist[]>;
+  /** one playlist's songs, in playlist order */
+  getPlaylistSongs(id: string): Promise<AppleMusicSong[]>;
   /** replace the queue with these songs and start playing at startIndex */
   play(ids: string[], startIndex: number): Promise<void>;
   pause(): Promise<void>;

@@ -1,21 +1,16 @@
 import type { BleManager, Device, Subscription } from "react-native-ble-plx";
 
-import { api } from "../api";
 import { isExpoGo } from "../runtime";
 import { useBio } from "../store/bio";
 
 /**
  * Live HR from Whoop "Broadcast Heart Rate" (Whoop app → Device settings → Heart Rate Broadcast).
  * Whoop then advertises the standard BLE Heart Rate Service, so any BLE chest strap works too.
- *
- * Readings are also forwarded to the backend (POST /live/hr, at most once a second), so the
- * Spotify coach on the backend sees the same heart rate without the laptop relay.
  */
 const HR_SERVICE = "0000180d-0000-1000-8000-00805f9b34fb";
 const HR_MEASUREMENT = "00002a37-0000-1000-8000-00805f9b34fb";
 const SCAN_TIMEOUT_MS = 20_000;
 const RECONNECT_DELAY_MS = 2_000;
-const FORWARD_EVERY_MS = 1_000;
 
 let manager: BleManager | null = null;
 let device: Device | null = null;
@@ -23,15 +18,6 @@ let hrSub: Subscription | null = null;
 let disconnectSub: Subscription | null = null;
 let scanTimer: ReturnType<typeof setTimeout> | null = null;
 let wantConnected = false;
-let lastForwardAt = 0;
-
-/** Best effort: a missed reading is fine, the next one follows within a second. */
-function forwardToBackend(bpm: number, source: string) {
-  const now = Date.now();
-  if (now - lastForwardAt < FORWARD_EVERY_MS) return;
-  lastForwardAt = now;
-  api.pushHr(bpm, source).catch(() => {});
-}
 
 const bio = () => useBio.getState();
 
@@ -98,7 +84,6 @@ async function connectTo(d: Device) {
       const hr = parseHrMeasurement(c.value);
       if (hr == null) return;
       bio().pushHr(hr);
-      forwardToBackend(hr, `phone · ${connected.name ?? "HR"}`);
     });
 
     disconnectSub?.remove();
@@ -111,7 +96,7 @@ async function connectTo(d: Device) {
 
     bio().setHrStatus("connected", { device: connected.name ?? connected.id });
   } catch (e) {
-    bio().setHrStatus("error", { error: `Connect failed: ${String(e)}` });
+    bio().setHrStatus("error", { error: "Couldn't connect to your band. Trying again…" });
     if (wantConnected) setTimeout(() => wantConnected && connectTo(d), RECONNECT_DELAY_MS);
   }
 }
@@ -123,7 +108,7 @@ export const whoopHr = {
 
   async connect() {
     if (isExpoGo) {
-      bio().setHrStatus("error", { error: "Whoop needs a development build — Expo Go can't use Bluetooth." });
+      bio().setHrStatus("error", { error: "The band needs the installed app: Expo Go can't use Bluetooth." });
       return;
     }
     wantConnected = true;
@@ -144,7 +129,7 @@ export const whoopHr = {
       if (d) connectTo(d);
       else
         bio().setHrStatus("error", {
-          error: "No heart-rate broadcast found. In the Whoop app, turn on Heart Rate Broadcast.",
+          error: "No band found. In the WHOOP app, turn on Heart Rate Broadcast, then try again.",
         });
     };
 

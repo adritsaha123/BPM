@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { useState, type ReactNode } from "react";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
 import { colors, radius, spacing } from "../theme";
 
@@ -124,6 +124,23 @@ export function Stepper({
   );
 }
 
+/** Album or playlist cover, with a music note when there's none (or it can't be loaded). */
+export function Artwork({ uri, size = 52 }: { uri?: string | null; size?: number }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const box = { width: size, height: size, borderRadius: size * 0.24 };
+  if (uri && failed !== uri) {
+    return <Image source={{ uri }} style={[styles.art, box]} onError={() => setFailed(uri)} accessibilityIgnoresInvertColors />;
+  }
+  return (
+    <View style={[styles.art, box]}>
+      <Text style={[styles.artGlyph, { fontSize: size * 0.45 }]}>♪</Text>
+    </View>
+  );
+}
+
+/** "1 song", "12 songs" */
+export const songCount = (n: number) => `${n} ${n === 1 ? "song" : "songs"}`;
+
 export const text = StyleSheet.create({
   h1: { fontSize: 32, fontWeight: "800", letterSpacing: -0.8, color: colors.text },
   body: { fontSize: 15, color: colors.text },
@@ -174,4 +191,6 @@ const styles = StyleSheet.create({
   stepperBtnText: { fontSize: 20, color: colors.text, fontWeight: "500" },
   stepperValue: { fontSize: 28, fontWeight: "800", letterSpacing: -0.8, color: colors.text, fontVariant: ["tabular-nums"] },
   stepperLabel: { fontSize: 12, color: colors.muted },
+  art: { backgroundColor: colors.surface2, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  artGlyph: { color: colors.primary, fontWeight: "800" },
 });

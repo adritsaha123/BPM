@@ -20,6 +20,16 @@ export type AppleMusicSong = {
   artworkUri?: string | null;
 };
 
+export type AppleMusicPlaylist = {
+  /** library persistent id (a UInt64, so it's a string) */
+  id: string;
+  name: string;
+  /** number of songs */
+  count: number;
+  /** file:// URI of one of its songs' covers */
+  artworkUri?: string | null;
+};
+
 export type AppleMusicState = {
   state: PlaybackState;
   positionS: number;

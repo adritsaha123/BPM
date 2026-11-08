@@ -43,7 +43,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
       }, wait);
     };
 
-    const slow = setTimeout(() => setStep("Waking up the server… (about a minute)"), 2_500);
+    const slow = setTimeout(() => setStep("Getting everything ready… this can take up to a minute"), 2_500);
     const skip = setTimeout(() => setCanSkip(true), SKIP_AFTER_MS);
     const giveUp = setTimeout(finish, GIVE_UP_MS);
     api
@@ -53,7 +53,7 @@ export function Splash({ onDone }: { onDone: () => void }) {
         finish();
       })
       .catch(() => {
-        setStep("Can't reach the server. Music needs it: check your connection.");
+        setStep("Can't connect right now. Check your internet connection.");
         setCanSkip(true);
       });
 

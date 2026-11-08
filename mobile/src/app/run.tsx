@@ -44,7 +44,7 @@ export default function RunScreen() {
         error ? (
           <Card title="Couldn't load this run">
             <Text style={styles.sub}>{error}</Text>
-            <Text style={styles.sub}>Check that the phone can reach the backend, then try again.</Text>
+            <Text style={styles.sub}>Check your internet connection, then try again.</Text>
           </Card>
         ) : (
           <ActivityIndicator style={{ marginTop: spacing.xl }} />
@@ -94,7 +94,7 @@ function UploadStatus({ state }: { state: string | undefined }) {
     state === "saved"
       ? "Saved to your runs."
       : state === "waiting"
-        ? "Not uploaded yet: the backend isn't reachable. It retries every minute while the app is open."
+        ? "Not saved online yet. It saves on its own once you're back online, while the app is open."
         : "Saving…";
   return <Text style={[styles.sub, { textAlign: "center" }, state === "waiting" && { color: colors.warn }]}>{text}</Text>;
 }

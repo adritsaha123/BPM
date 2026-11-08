@@ -52,17 +52,17 @@ Each service only sends people back to addresses you list:
 setx BPM_CLOUD_URL "https://<service>.onrender.com"   # once; reopen PowerShell after
 .\dev.ps1                                              # or: .\dev.ps1 -Cloud https://<service>.onrender.com
 ```
-With a cloud URL, `dev.ps1` starts only Expo (plus the Whoop relay, which now sends heart rate to
-the cloud). No local backend, no ngrok. For a standalone build, put
+With a cloud URL, `dev.ps1` starts only Expo (plus the laptop heart rate process, which the app
+no longer uses: add `-NoWhoop`). No local backend, no ngrok. For a standalone build, put
 `EXPO_PUBLIC_API_URL=https://<service>.onrender.com` in `mobile/.env` before building.
 
 ## 5. Connect accounts in the app
-On the setup screen: **Whoop account → Connect Whoop account**, and **Music → Spotify → Connect Spotify**.
+On the setup screen: **WHOOP → Connect account**.
 Each phone gets its own logins (keyed by an anonymous per-install id).
 
 ## Notes
-- Live heart rate from the laptop relay (`/live/hr`) is shared by everyone using the backend.
-  Fine for one runner; a phone build reading the band itself avoids the laptop entirely.
+- The app reads live heart rate from the band itself over Bluetooth; it doesn't go through the
+  backend.
 - Logins made on the laptop (files in `backend/`) aren't copied to the cloud; connect again in the app.
 - Changing code: merge into `main`, then update the `render` branch; Render redeploys automatically:
   ```bash

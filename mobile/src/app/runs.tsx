@@ -51,7 +51,7 @@ export default function RunsScreen() {
     >
       {error && (
         <Text style={[styles.sub, { color: colors.warn }]}>
-          Couldn't reach the backend, so only runs from this session are shown.
+          Couldn't load your earlier runs, so only the ones from this session are shown.
         </Text>
       )}
       {saved === null ? (

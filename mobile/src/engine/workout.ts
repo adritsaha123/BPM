@@ -1,24 +1,13 @@
+import { musicErrorText } from "../audio/appleMusicOutput";
 import { music } from "../audio/music";
 import { location } from "../sources/location";
-import { mock } from "../sources/mock";
 import { pedometer } from "../sources/pedometer";
-import { relayHr } from "../sources/relayHr";
 import { route, summarize } from "../sources/route";
 import { whoopHr } from "../sources/whoopBle";
 import { isHrFresh, isPaceFresh, useBio } from "../store/bio";
-import { pace } from "./pace";
 import { useSession } from "../store/session";
-import {
-  DJ_CONTROL,
-  DJ_ROTATE,
-  SPOTIFY_CONTROL,
-  decide,
-  initialBpm,
-  shouldRotate,
-  zoneError,
-  type HrSample,
-  type RotateConfig,
-} from "./controller";
+import { SONG_ROTATE, TEMPO_CONTROL, decide, initialBpm, shouldRotate, zoneError, type HrSample } from "./controller";
+import { pace } from "./pace";
 import { summary } from "./summary";
 
 /**
@@ -27,15 +16,9 @@ import { summary } from "./summary";
  * Driven by sensor events (not timers), throttled to one decision per second.
  */
 const TICK_MS = 1000;
-
-/** Spotify switches whole songs (bigger, slower steps); DJ stretches songs smoothly; both in running tempo. */
-// Apple Music re-rates songs like DJ mode does, so it uses the same small, quick tempo steps.
-const CONTROLS = { spotify: SPOTIFY_CONTROL, dj: DJ_CONTROL, apple: DJ_CONTROL };
-const control = () => CONTROLS[useSession.getState().musicSource];
-
-/** Steady HR → a different song at the same tempo. Spotify already changes songs at each song's end. */
-const ROTATE: Record<keyof typeof CONTROLS, RotateConfig | null> = { spotify: null, dj: DJ_ROTATE, apple: DJ_ROTATE };
 const HR_HISTORY_MS = 90_000;
+/** Longest Start waits for the music. Past that the run starts and the music joins when it's ready. */
+const MUSIC_WAIT_MS = 20_000;
 
 let unsubscribe: (() => void) | null = null;
 let lastTick = 0;
@@ -70,12 +53,10 @@ function tick() {
     songStartedAt = now;
   }
 
-  // Song energy follows where we are vs the zone (Spotify picks high-energy songs to push you up).
-  const err = zoneError(input, control());
-  if (err != null) music.setIntensity(err > 0 ? "push" : err < 0 ? "ease" : "hold");
+  const err = zoneError(input, TEMPO_CONTROL);
   summary.record(now, { hr: input.hrFresh ? bio.hr : null, zone: err, cadence: bio.cadence, speed: isPaceFresh(bio, now) ? bio.speed : null });
 
-  const decision = decide(input, control());
+  const decision = decide(input, TEMPO_CONTROL);
   if (!decision) return maybeRotate(now);
 
   lastChangeAt = now;
@@ -86,55 +67,59 @@ function tick() {
 
 /** HR has held steady for a while and the song has had its turn: play a different one at this tempo. */
 function maybeRotate(now: number) {
-  const config = ROTATE[useSession.getState().musicSource];
-  if (!config) return;
-  if (!shouldRotate({ now, hrSamples: hrHistory, songStartedAt, lastBpmChangeAt: lastChangeAt }, config)) return;
+  if (!shouldRotate({ now, hrSamples: hrHistory, songStartedAt, lastBpmChangeAt: lastChangeAt }, SONG_ROTATE)) return;
   songStartedAt = now; // whether or not a switch starts, wait a full song before asking again
   music.rotate();
 }
 
-/** Backend errors look like `404 Not Found: {"detail":"..."}`; keep just the detail. */
-function spotifyError(e: unknown): string {
-  const m = String(e).match(/"detail":"((?:[^"\\]|\\.)*)"/);
-  return m ? m[1] : String(e).replace(/^Error: /, "");
+const TIMED_OUT = Symbol("timed out");
+
+/** The promise's value, or TIMED_OUT if it takes longer than `ms` (the promise keeps running). */
+function within<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-export async function startWorkout(): Promise<{ warnings: string[] }> {
-  const warnings: string[] = [];
+export async function startWorkout() {
   const session = useSession.getState();
+  const notices: string[] = [];
+  session.setNotices([]);
   useBio.getState().reset();
 
-  mock.start({ hr: session.hrSource === "sim", motion: session.simMotion });
-  // HR sources are non-blocking: the loop holds BPM steady until fresh HR arrives.
-  if (session.hrSource === "laptop") relayHr.start();
-  if (session.hrSource === "phone" && useBio.getState().hrStatus !== "connected") whoopHr.connect();
+  // Heart rate doesn't block the start: the loop holds the tempo until fresh HR arrives.
+  if (useBio.getState().hrStatus !== "connected") whoopHr.connect();
   pace.reset();
-  if (!session.simMotion) {
-    route.begin(); // record the GPS track for the route map (sources/route.ts)
-    if (!(await pedometer.start())) warnings.push("Motion access denied or unavailable — no cadence.");
-    if (!(await location.start())) warnings.push("Location denied — no pace.");
+  route.begin(); // record the GPS track for the route map (sources/route.ts)
+  if (!(await pedometer.start().catch(() => false))) {
+    notices.push("Motion & Fitness access is off, so cadence isn't measured. You can turn it on in Settings.");
+  }
+  if (!(await location.start().catch(() => false))) {
+    notices.push("Location access is off, so pace and your route aren't recorded. You can turn it on in Settings.");
   }
 
-  const bpm = initialBpm(useBio.getState().cadence, control());
+  const bpm = initialBpm(useBio.getState().cadence, TEMPO_CONTROL);
   session.setTargetBpm(bpm, "start");
-  // Music never blocks the workout: Spotify / Apple Music fall back to DJ mode, and if DJ mode
-  // can't start either (backend unreachable), the run continues without music.
+  // The music never blocks the run: if the playlist is still loading the run starts anyway and
+  // the music joins when it's ready; if it can't play at all, the run goes on without it.
+  const starting = music.start(bpm);
+  const noMusic = (e: unknown) => `The music couldn't start: ${musicErrorText(e)}`;
   try {
-    await music.start(bpm);
-  } catch (e) {
-    if (session.musicSource !== "dj") {
-      const name = session.musicSource === "apple" ? "Apple Music" : "Spotify";
-      warnings.push(`${name} couldn't start (${spotifyError(e)}). Using DJ mode instead.`);
-      music.stop();
-      session.setMusicSource("dj");
-      try {
-        await music.start(bpm);
-      } catch (e2) {
-        warnings.push(`DJ mode couldn't start either (${spotifyError(e2)}). Running without music.`);
-      }
-    } else {
-      warnings.push(`DJ mode couldn't start (${spotifyError(e)}). Running without music.`);
+    if ((await within(starting, MUSIC_WAIT_MS)) === TIMED_OUT) {
+      const loading = "Your playlist is still loading. The music starts as soon as it's ready.";
+      notices.push(loading);
+      const settled = (e?: unknown) => {
+        const s = useSession.getState();
+        if (s.status !== "running") return;
+        s.setNotices(s.notices.filter((n) => n !== loading));
+        if (e !== undefined) s.addNotice(noMusic(e));
+      };
+      starting.then(() => settled(), (e) => settled(e ?? "unknown error"));
     }
+  } catch (e) {
+    notices.push(noMusic(e));
   }
 
   lastChangeAt = Date.now(); // give the body one cooldown period before the first nudge
@@ -145,17 +130,16 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
   unsubscribe?.();
   unsubscribe = useBio.subscribe(tick);
   summary.start();
+  session.setNotices(notices);
   session.setRunning(true);
-  return { warnings };
 }
 
 export async function stopWorkout() {
   unsubscribe?.();
   unsubscribe = null;
   music.stop();
-  mock.stop();
   pedometer.stop();
-  await location.stop();
+  await location.stop().catch(() => {});
   const run = route.finish(); // uploads in the background; retried later if offline
   const result = summary.finish();
   if (result && run) {
@@ -166,5 +150,5 @@ export async function stopWorkout() {
   }
   useSession.getState().setLastSummary(result);
   useSession.getState().setRunning(false);
-  // Whoop / laptop relay stay connected between workouts so the setup screen shows live status.
+  // The WHOOP band stays connected between workouts so the setup screen shows live status.
 }

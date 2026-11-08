@@ -21,6 +21,8 @@ public class AppleMusicModule: Module {
   private var rateResets = 0
   private var observers: [NSObjectProtocol] = []
   private var observedPlayer: MPMusicPlayerController?
+  /// How long `play` waits for prepareToPlay before starting playback anyway.
+  private static let prepareTimeoutS = 5.0
 
   private var player: MPMusicPlayerController {
     playerKind == "system"
@@ -73,6 +75,31 @@ public class AppleMusicModule: Module {
       return ["total": items.count, "songs": items[start..<end].map { Self.serialize($0) }]
     }
 
+    /// Playlists in the library (your own, Apple Music playlists you added, smart playlists),
+    /// A to Z, without folders and empty playlists.
+    AsyncFunction("getPlaylists") { () throws -> [[String: Any]] in
+      guard MPMediaLibrary.authorizationStatus() == .authorized else {
+        throw NotAuthorizedException()
+      }
+      let playlists = (MPMediaQuery.playlists().collections ?? []).compactMap { $0 as? MPMediaPlaylist }
+      return
+        playlists
+        .filter { $0.count > 0 && !Self.isFolder($0) }
+        .sorted { ($0.name ?? "").localizedStandardCompare($1.name ?? "") == .orderedAscending }
+        .map { Self.serialize(playlist: $0) }
+    }
+
+    /// The songs of one playlist, in playlist order.
+    AsyncFunction("getPlaylistSongs") { (id: String) throws -> [[String: Any]] in
+      guard MPMediaLibrary.authorizationStatus() == .authorized else {
+        throw NotAuthorizedException()
+      }
+      guard let playlist = Self.playlist(withId: id) else {
+        throw PlaylistNotFoundException()
+      }
+      return playlist.items.map { Self.serialize($0) }
+    }
+
     // ------------------------------------------------------------------ playback
 
     /// Replace the queue with these songs (library ids) and start at `startIndex`.
@@ -90,17 +117,23 @@ public class AppleMusicModule: Module {
         if startIndex > 0 && startIndex < items.count {
           p.nowPlayingItem = items[startIndex]
         }
+        // Whichever comes first wins: prepareToPlay's answer or the timeout below.
+        let settled = Once()
+        let start: () -> Void = {
+          guard settled.claim() else { return }
+          p.play()  // resets the rate to 1.0 ...
+          self.applyRate(after: 0.3)  // ... so put ours back once playback has started
+          promise.resolve(nil)
+        }
         p.prepareToPlay { error in
           DispatchQueue.main.async {
-            if let error = error {
-              promise.reject("ERR_PREPARE", "Couldn't load the song: \(error.localizedDescription)")
-              return
-            }
-            p.play()  // resets the rate to 1.0 ...
-            self.applyRate(after: 0.3)  // ... so put ours back once playback has started
-            promise.resolve(nil)
+            guard let error = error else { return start() }
+            guard settled.claim() else { return }
+            promise.reject("ERR_PREPARE", "Couldn't load the song: \(error.localizedDescription)")
           }
         }
+        // If prepareToPlay never answers, play anyway instead of leaving the workout waiting.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.prepareTimeoutS, execute: start)
       }
     }
 
@@ -239,6 +272,34 @@ public class AppleMusicModule: Module {
     return query.items?.first
   }
 
+  private static func playlist(withId id: String) -> MPMediaPlaylist? {
+    guard let pid = UInt64(id) else { return nil }
+    let query = MPMediaQuery.playlists()
+    query.addFilterPredicate(
+      MPMediaPropertyPredicate(
+        value: NSNumber(value: pid), forProperty: MPMediaPlaylistPropertyPersistentID))
+    return query.collections?.first as? MPMediaPlaylist
+  }
+
+  /// Folders show up as playlists holding all of their playlists' songs. "isFolder" isn't in the
+  /// public headers, but it's the only way to tell them apart.
+  private static func isFolder(_ playlist: MPMediaPlaylist) -> Bool {
+    (playlist.value(forProperty: "isFolder") as? Bool) ?? false
+  }
+
+  private static func serialize(playlist: MPMediaPlaylist) -> [String: Any] {
+    var info: [String: Any] = [
+      // persistentID is a UInt64, too big for a JS number: send it as a string
+      "id": String(playlist.persistentID),
+      "name": playlist.name ?? "Untitled playlist",
+      "count": playlist.count,
+    ]
+    if let item = playlist.representativeItem {
+      info["artworkUri"] = artworkUri(for: item)
+    }
+    return info
+  }
+
   private static func serialize(_ item: MPMediaItem) -> [String: Any] {
     [
       // persistentID is a UInt64, too big for a JS number: send it as a string
@@ -253,9 +314,10 @@ public class AppleMusicModule: Module {
     ]
   }
 
-  /// The cover as a file the JS side can show. Saved once per song (getState runs every second).
+  /// The cover as a file the JS side can show. Saved once per song (getState runs every second)
+  /// in Caches, which iOS keeps between launches unless it runs low on space.
   private static func artworkUri(for item: MPMediaItem) -> String? {
-    let url = FileManager.default.temporaryDirectory
+    let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("apple-music-art-\(item.persistentID).jpg")
     if FileManager.default.fileExists(atPath: url.path) {
       return url.absoluteString
@@ -292,5 +354,22 @@ public class AppleMusicModule: Module {
 internal final class NotAuthorizedException: Exception, @unchecked Sendable {
   override var reason: String {
     "Apple Music access isn't allowed yet. Call requestAuthorization() first, or allow it in Settings > Privacy & Security > Media & Apple Music."
+  }
+}
+
+internal final class PlaylistNotFoundException: Exception, @unchecked Sendable {
+  override var reason: String {
+    "That playlist isn't in your library anymore. Pick another one."
+  }
+}
+
+/// Lets only the first of several callbacks (a completion or its timeout) go ahead. Main queue only.
+private final class Once {
+  private var done = false
+
+  func claim() -> Bool {
+    if done { return false }
+    done = true
+    return true
   }
 }

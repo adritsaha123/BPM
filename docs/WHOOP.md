@@ -5,7 +5,7 @@ Two separate pipes, because WHOOP's web API has no live data:
 | What | How | Where |
 |---|---|---|
 | **History**: max HR, resting HR, HRV, HR zones, past runs (avg/max HR, pace, time in zones), daily steps | WHOOP Developer API v2 (OAuth) | `backend/app/whoop.py`, `/whoop/*` routes |
-| **Live heart rate**, about once a second | Band's Heart Rate Broadcast over Bluetooth, read on the laptop | `backend/scripts/whoop_live_hr.py` → `POST /live/hr` → app polls `GET /live/hr` |
+| **Live heart rate**, about once a second | Band's Heart Rate Broadcast over Bluetooth, read by the app on the phone | `mobile/src/sources/whoopBle.ts` |
 
 No WHOOP credentials in `backend/.env`? Every `/whoop/*` endpoint serves **mock data** in the same shape, so the UI can be built without a band.
 
@@ -16,7 +16,7 @@ Each phone sends an anonymous id (`X-User-Id`), and the backend keeps a separate
 Until a user connects their own WHOOP, they borrow the default (laptop) login if there is one: `/whoop/status` returns
 `"shared": true` and the app offers **Connect my own Whoop**. Refreshes of a borrowed login are saved to the default token file.
 
-Flow: app **Connect Whoop account** → in-app browser → `/whoop/login?user=<id>&return_to=<app url>` → WHOOP login →
+Flow: app **WHOOP → Connect account** → in-app browser → `/whoop/login?user=<id>&return_to=<app url>` → WHOOP login →
 `/whoop/callback` saves the tokens → redirects back to the app (`bpm://…` or Expo Go's `exp://…`; nothing else is allowed).
 
 WHOOP has to reach the callback from the phone, so `WHOOP_REDIRECT_URI` must be a public https URL registered on the
@@ -61,22 +61,23 @@ Check: http://localhost:8000/whoop/summary
 | `GET /whoop/body` | height, weight, max HR |
 | `GET /live/hr?window_s=30` | latest live bpm, how many seconds old, rolling average |
 
-Mobile: typed wrappers are in `mobile/src/api.ts` (`api.whoopSummary()`, `api.liveHr()`, ...).
+Mobile: typed wrappers are in `mobile/src/api.ts` (`api.whoopStatus()`, `api.whoopSummary()`, ...).
 
 ## 3. Live heart rate from the band
 
 1. WHOOP app → **Device Settings → Heart Rate Broadcast → Start**. The band light flashes blue.
-2. On the laptop (backend already running):
-   ```bash
-   cd backend && source .venv/bin/activate
-   pip install -r requirements-ble.txt
-   python scripts/whoop_live_hr.py            # add --no-post to just print
-   ```
-3. macOS asks your terminal for Bluetooth permission the first time. Allow it (System Settings → Privacy & Security → Bluetooth).
-4. In the app, pick **Laptop relay** on the setup screen. `mobile/src/sources/relayHr.ts` polls `GET /live/hr` every second and feeds the BPM loop; it treats readings older than 5 s (`age_s`) as stale and holds the music BPM steady until they're fresh again.
-5. The setup screen also shows your `/whoop/summary` HR zones as chips; tap one to set the target zone.
+2. In the app: **WHOOP → Connect band**. It needs the build installed from Xcode (Expo Go has no
+   Bluetooth). `mobile/src/sources/whoopBle.ts` scans for the standard Bluetooth Heart Rate
+   Service, prefers a device named WHOOP, and reconnects by itself if the connection drops. The
+   workout treats readings older than a few seconds as stale and holds the music BPM steady until
+   they're fresh again.
+3. With your own WHOOP account connected, the setup screen shows your `/whoop/summary` HR zones as
+   tiles; tap one to set the target zone.
 
-Any standard Bluetooth heart rate monitor works the same way (`--name ""` takes the first one found).
+The laptop script `backend/scripts/whoop_live_hr.py` (band → laptop Bluetooth → `POST /live/hr`)
+is still in the repo for the backend, but the app doesn't read `/live/hr` anymore.
+
+Any standard Bluetooth heart rate monitor works too: the app takes one when no WHOOP is found.
 
 If the band doesn't show up: make sure broadcast is on, the WHOOP phone app isn't hogging the connection, and the band is within a few meters.
 

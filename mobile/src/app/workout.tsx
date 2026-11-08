@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { useMusicPrep } from "../audio/appleMusicOutput";
 import { music } from "../audio/music";
 import { RouteMap } from "../components/RouteMap";
-import { Button, Card, Pill, text } from "../components/ui";
+import { Artwork, Button, Card, Pill, text } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { stopWorkout } from "../engine/workout";
 import { summarize, useRoute } from "../sources/route";
-import { isHrFresh, isPaceFresh, useBio } from "../store/bio";
+import { isHrFresh, isPaceFresh, useBio, type HrStatus } from "../store/bio";
 import { useSession, type Zone } from "../store/session";
 import { colors, radius, spacing, zoneColor } from "../theme";
 
@@ -37,6 +38,7 @@ export default function WorkoutScreen() {
     <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={styles.container}>
         <TopBar />
+        <Notices />
         <Hero />
         <Metrics />
         <LiveRoute />
@@ -72,6 +74,32 @@ function TopBar() {
   );
 }
 
+/** Under the big number while there's no heart rate. */
+const BAND_TEXT: Record<HrStatus, string> = {
+  idle: "band not connected",
+  "bluetooth-off": "Bluetooth is off",
+  scanning: "looking for your band…",
+  connecting: "connecting to your band…",
+  connected: "waiting for heart rate…",
+  disconnected: "band disconnected, reconnecting…",
+  error: "can't reach your band",
+};
+
+/** Things to know about this run, e.g. "Location access is off". */
+function Notices() {
+  const notices = useSession((s) => s.notices);
+  if (!notices.length) return null;
+  return (
+    <View style={styles.notices}>
+      {notices.map((n) => (
+        <Text key={n} style={styles.notice}>
+          {n}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 function Hero() {
   const { mode, zone, value, err } = useZoneState();
   const status = useBio((s) => s.hrStatus);
@@ -81,9 +109,7 @@ function Hero() {
     mode === "hr"
       ? value != null
         ? `bpm · target ${zone.min}–${zone.max}`
-        : status === "connected"
-          ? "waiting for heart rate…"
-          : status
+        : BAND_TEXT[status]
       : `/km · target ${formatPace(zone.min)}–${formatPace(zone.max)}`;
   return (
     <View style={styles.hero}>
@@ -132,14 +158,14 @@ function Metric({ label, value, unit, color }: { label: string; value: string; u
   );
 }
 
-const SOURCE_NAME = { spotify: "Spotify", dj: "DJ", apple: "Apple Music" } as const;
-
 function MusicCard() {
   const bpm = useSession((s) => s.targetBpm);
   const title = useSession((s) => s.trackTitle);
+  const art = useSession((s) => s.trackArt);
   const rate = useSession((s) => s.playbackRate);
-  const source = useSession((s) => s.musicSource);
+  const playlist = useSession((s) => s.playlist);
   const paused = useSession((s) => s.musicPaused);
+  const loading = useMusicPrep((s) => s.status === "loading");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,16 +181,14 @@ function MusicCard() {
     }
   }
 
-  // Titles look like "Song — Artist · License" (DJ) or "Song — Artist · 164 BPM" (Spotify, Apple Music).
-  const [song, rest] = (title ?? "—").split(" — ");
-  const chip = source === "spotify" ? `${bpm} BPM` : `${rate.toFixed(2)}× · ${bpm} BPM`;
+  // Titles look like "Song — Artist · 164 BPM".
+  const [song, rest] = title ? title.split(" — ") : [loading ? "Getting your playlist ready…" : "No music playing", null];
+  const chip = `${rate.toFixed(2)}× · ${bpm} BPM`;
 
   return (
-    <Card title={`Now playing · ${SOURCE_NAME[source]}`} right={<Text style={styles.bpmChip}>{paused ? "Paused" : chip}</Text>}>
+    <Card title="Now playing" right={<Text style={styles.bpmChip}>{paused ? "Paused" : chip}</Text>}>
       <View style={styles.nowRow}>
-        <View style={styles.art}>
-          <Text style={styles.artGlyph}>♪</Text>
-        </View>
+        <Artwork uri={art} size={56} />
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={styles.song} numberOfLines={1}>
             {song}
@@ -178,14 +202,19 @@ function MusicCard() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={paused ? "Resume music" : "Pause music"}
-          disabled={busy}
+          disabled={busy || !title}
           onPress={toggle}
-          style={({ pressed }) => [styles.playBtn, { opacity: busy ? 0.4 : pressed ? 0.8 : 1 }]}
+          style={({ pressed }) => [styles.playBtn, { opacity: busy || !title ? 0.4 : pressed ? 0.8 : 1 }]}
         >
           <Text style={styles.playGlyph}>{paused ? "▶" : "❚❚"}</Text>
         </Pressable>
       </View>
       {error && <Text style={text.error}>{error}</Text>}
+      {playlist && (
+        <Text style={text.help} numberOfLines={1}>
+          From {playlist.name}
+        </Text>
+      )}
     </Card>
   );
 }
@@ -209,16 +238,13 @@ function LastAdjustment() {
   );
 }
 
-/** Hold (not tap) to end, so a sweaty tap mid-run doesn't stop the workout. */
-/** The route so far on a map, with the GPS distance. Hidden with simulated running (no GPS). */
+/** The route so far on a map, with the GPS distance. */
 function LiveRoute() {
   const live = useRoute((s) => s.live);
-  const simMotion = useSession((s) => s.simMotion);
   const km = useMemo(
     () => (live.length > 1 ? summarize({ id: "", started_at: 0, ended_at: 0, points: live }).distance_km : 0),
     [live],
   );
-  if (simMotion) return null;
   return (
     <Card title="Route" right={<Text style={[text.help, text.num]}>{`${km.toFixed(2)} km`}</Text>}>
       <RouteMap points={live} live style={{ height: 200 }} />
@@ -226,6 +252,7 @@ function LiveRoute() {
   );
 }
 
+/** Hold (not tap) to end, so a sweaty tap mid-run doesn't stop the workout. */
 function EndButton() {
   const [hint, setHint] = useState(false);
   return (
@@ -255,6 +282,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing.lg, paddingTop: spacing.sm, gap: 14 },
   topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  notices: { backgroundColor: "rgba(255,181,71,0.12)", borderRadius: radius.md, padding: 14, gap: 6 },
+  notice: { fontSize: 13, lineHeight: 19, color: colors.warn },
   elapsed: { fontSize: 17, fontWeight: "700", color: colors.muted },
   hero: { alignItems: "center", gap: 18, paddingVertical: spacing.sm },
   ring: {
@@ -286,8 +315,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   nowRow: { flexDirection: "row", alignItems: "center", gap: 14 },
-  art: { width: 56, height: 56, borderRadius: 14, backgroundColor: colors.ok, alignItems: "center", justifyContent: "center" },
-  artGlyph: { fontSize: 26, color: colors.onPrimary, fontWeight: "800" },
   song: { fontSize: 17, fontWeight: "700", color: colors.text },
   artist: { fontSize: 13, color: colors.muted },
   playBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.text, alignItems: "center", justifyContent: "center" },

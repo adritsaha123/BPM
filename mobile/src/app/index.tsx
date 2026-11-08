@@ -1,194 +1,209 @@
-import { Link, router } from "expo-router";
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { api, API_URL, type SpotifyMode, type WhoopMode, type WhoopSummary } from "../api";
-import { Button, Card, Eyebrow, Pill, Segmented, Stepper, text } from "../components/ui";
+import { connectWhoop, disconnectWhoop } from "../accounts";
+import { api, type WhoopMode, type WhoopSummary } from "../api";
+import { prepare, restorePlaylist, useMusicPrep } from "../audio/appleMusicOutput";
+import { Artwork, Button, Card, Segmented, Stepper, songCount, text } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { startWorkout } from "../engine/workout";
-import { isExpoGo } from "../runtime";
-import { relayHr } from "../sources/relayHr";
 import { whoopHr } from "../sources/whoopBle";
 import { useBio, type HrStatus } from "../store/bio";
-import { useSession, type HrSource, type MusicSource, type ZoneMode } from "../store/session";
-import { colors, spacing } from "../theme";
-import { connectSpotify, connectWhoop, disconnectSpotify, disconnectWhoop } from "../accounts";
+import { useSession, type ZoneMode } from "../store/session";
+import { colors, radius, spacing } from "../theme";
 
-const STATUS_TEXT: Record<Exclude<HrSource, "sim">, Record<HrStatus, string>> = {
-  phone: {
-    idle: "Not connected",
-    "bluetooth-off": "Bluetooth is off",
-    scanning: "Searching for Whoop…",
-    connecting: "Connecting…",
-    connected: "Connected",
-    disconnected: "Disconnected — reconnecting…",
-    error: "Couldn't connect",
-  },
-  laptop: {
-    idle: "Not started",
-    "bluetooth-off": "Bluetooth is off",
-    scanning: "Waiting for the laptop script…",
-    connecting: "Contacting the backend…",
-    connected: "Live",
-    disconnected: "Stream went stale",
-    error: "Can't reach the backend",
-  },
+const BAND_TEXT: Record<HrStatus, string> = {
+  idle: "Band not connected",
+  "bluetooth-off": "Bluetooth is off",
+  scanning: "Looking for your band…",
+  connecting: "Connecting…",
+  connected: "Band connected",
+  disconnected: "Connection lost, reconnecting…",
+  error: "Couldn't connect",
 };
 
-const WHOOP_MODE_TEXT: Record<WhoopMode | "offline" | "loading", string> = {
-  loading: "Checking…",
-  live: "Connected: zones and history come from your Whoop",
-  not_connected: "Not connected. Connect to use your own HR zones.",
-  mock: "Sample data (no Whoop keys on the backend)",
-  offline: `Can't reach the backend at ${API_URL}`,
-};
-
-const SPOTIFY_MODE_TEXT: Record<SpotifyMode | "offline" | "loading", string> = {
-  loading: "",
-  live: "Spotify is connected.",
-  mock: "Using the demo music library (no Spotify keys on the backend).",
-  not_connected: "Spotify isn't connected yet.",
-  offline: `Can't reach the backend at ${API_URL}. It may be waking up (~1 min): tap Retry.`,
-};
-
-const SOURCE_OPTIONS: { value: HrSource; label: string }[] = [
-  { value: "laptop", label: "Laptop relay" },
-  ...(isExpoGo ? [] : [{ value: "phone" as const, label: "Phone BT" }]),
-  { value: "sim", label: "Simulated" },
-];
+type Account = WhoopMode | "offline" | null; // null = still checking
 
 export default function SetupScreen() {
-  const hrStatus = useBio((s) => s.hrStatus);
-  const hrDevice = useBio((s) => s.hrDevice);
-  const hrError = useBio((s) => s.hrError);
-  const hr = useBio((s) => s.hr);
-
   const mode = useSession((s) => s.mode);
-  const hrZone = useSession((s) => s.hrZone);
-  const paceZone = useSession((s) => s.paceZone);
-  const hrSource = useSession((s) => s.hrSource);
-  const simMotion = useSession((s) => s.simMotion);
-  const musicSource = useSession((s) => s.musicSource);
-  const { setMode, setZone, setHrSource, setSimMotion, setMusicSource } = useSession.getState();
-  const [spotifyMode, setSpotifyMode] = useState<SpotifyMode | "offline" | null>(null);
-  const [spotifyShared, setSpotifyShared] = useState(false); // borrowing the laptop's login
-  const [spotifyBusy, setSpotifyBusy] = useState(false);
-  const [spotifyMsg, setSpotifyMsg] = useState<string | null>(null);
+  const playlist = useSession((s) => s.playlist);
+  const hrStatus = useBio((s) => s.hrStatus);
+  const prep = useMusicPrep((s) => s.status);
 
-  const [starting, setStarting] = useState(false);
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [whoop, setWhoop] = useState<WhoopSummary | null>(null);
-  const [whoopMode, setWhoopMode] = useState<WhoopMode | "offline" | null>(null);
-  const [whoopShared, setWhoopShared] = useState(false); // borrowing the laptop's login
-  const [whoopBusy, setWhoopBusy] = useState(false);
-  const [whoopMsg, setWhoopMsg] = useState<string | null>(null);
+  const [account, setAccount] = useState<Account>(null);
+  const [shared, setShared] = useState(false); // backend's default login, not this user's own
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
-  // Laptop relay polls while selected so you can see live HR before starting.
-  useEffect(() => {
-    if (hrSource !== "laptop") return;
-    relayHr.start();
-    return () => relayHr.stop();
-  }, [hrSource]);
-
-  // This user's WHOOP account status + personal HR zones (sample data when the backend has no WHOOP keys).
+  // This user's WHOOP account status + personal HR zones.
   async function loadWhoop() {
     try {
-      const { mode: m, shared } = await api.whoopStatus();
-      setWhoopMode(m);
-      setWhoopShared(Boolean(shared));
-      setWhoop(m === "not_connected" ? null : await api.whoopSummary());
+      const status = await api.whoopStatus();
+      setAccount(status.mode);
+      setShared(Boolean(status.shared));
+      setWhoop(status.mode === "live" && !status.shared ? await api.whoopSummary() : null);
     } catch {
-      setWhoopMode("offline");
+      setAccount("offline");
       setWhoop(null);
     }
   }
+
   useEffect(() => {
     loadWhoop();
+    restorePlaylist().catch(() => {});
   }, []);
 
-  async function loadSpotify() {
-    try {
-      const r = await api.spotifyStatus();
-      setSpotifyMode(r.mode);
-      setSpotifyShared(Boolean(r.shared));
-    } catch {
-      setSpotifyMode("offline");
-    }
-  }
+  // Get the playlist ready as soon as it's picked, so Start doesn't wait for it.
+  const playlistId = playlist?.id;
   useEffect(() => {
-    if (musicSource === "spotify") loadSpotify();
-  }, [musicSource]);
+    if (playlistId) prepare(playlistId).catch(() => {});
+  }, [playlistId]);
 
-  async function onConnectSpotify() {
-    setSpotifyBusy(true);
-    setSpotifyMsg(null);
-    try {
-      const res = await connectSpotify();
-      if (!res.ok) setSpotifyMsg(res.message);
-      await loadSpotify();
-    } catch (e) {
-      setSpotifyMsg(`Couldn't open Spotify login: ${String(e)}`);
-    } finally {
-      setSpotifyBusy(false);
-    }
-  }
-
-  async function onDisconnectSpotify() {
-    setSpotifyBusy(true);
-    try {
-      await disconnectSpotify();
-    } finally {
-      await loadSpotify();
-      setSpotifyBusy(false);
-    }
-  }
-
-  async function onConnectWhoop() {
-    setWhoopBusy(true);
-    setWhoopMsg(null);
-    try {
-      const res = await connectWhoop();
-      if (!res.ok) setWhoopMsg(res.message);
-      await loadWhoop();
-    } catch (e) {
-      setWhoopMsg(`Couldn't open WHOOP login: ${String(e)}`);
-    } finally {
-      setWhoopBusy(false);
-    }
-  }
-
-  async function onDisconnectWhoop() {
-    setWhoopBusy(true);
-    try {
-      await disconnectWhoop();
-    } finally {
-      await loadWhoop();
-      setWhoopBusy(false);
-    }
-  }
-
-  function changeSource(next: HrSource) {
-    if (next === hrSource) return;
-    if (hrSource === "phone") whoopHr.disconnect();
-    setHrSource(next);
-  }
-
-  const sim = hrSource === "sim";
-  const busy = hrStatus === "scanning" || hrStatus === "connecting";
-  const connected = hrStatus === "connected";
-  const canStart = sim || connected;
+  const bandConnected = hrStatus === "connected";
+  const needsBand = mode === "hr" && !bandConnected;
+  const canStart = !!playlist && prep !== "error" && !needsBand;
+  const hint = !playlist
+    ? "Choose a playlist to start."
+    : prep === "error"
+      ? "Your playlist can't play right now. Try again or pick another one."
+      : needsBand
+        ? "Connect your WHOOP band to start, or set a pace target instead."
+        : null;
 
   async function onStart() {
     setStarting(true);
+    setStartError(null);
     try {
-      const res = await startWorkout();
-      setWarnings(res.warnings);
+      await startWorkout();
       router.push("/workout");
+    } catch (e) {
+      setStartError(`Couldn't start the workout: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setStarting(false);
     }
   }
+
+  return (
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScrollView contentContainerStyle={styles.container}>
+        <View style={styles.header}>
+          <Text style={text.h1}>BPM Coach</Text>
+          <Text style={text.help}>Music that keeps you in the zone.</Text>
+        </View>
+
+        <WhoopCard account={account} shared={shared} reload={loadWhoop} />
+        <ZoneCard whoop={whoop} />
+        <MusicCard disabled={starting} />
+
+        {startError && <Text style={text.error}>{startError}</Text>}
+        <Button
+          label={starting ? "Starting…" : "Start workout"}
+          onPress={onStart}
+          disabled={!canStart || starting}
+          busy={starting}
+        />
+        {hint && <Text style={[text.help, styles.centerText]}>{hint}</Text>}
+        <Button label="Past runs" variant="secondary" onPress={() => router.push("/runs")} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+/** The band (live heart rate over Bluetooth) and the account (heart rate zones). */
+function WhoopCard({ account, shared, reload }: { account: Account; shared: boolean; reload: () => Promise<void> }) {
+  const hrStatus = useBio((s) => s.hrStatus);
+  const hrDevice = useBio((s) => s.hrDevice);
+  const hrError = useBio((s) => s.hrError);
+  const hr = useBio((s) => s.hr);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const connected = hrStatus === "connected";
+  const searching = hrStatus === "scanning" || hrStatus === "connecting";
+  const dot = connected ? colors.ok : searching ? colors.primary : hrStatus === "error" ? colors.error : colors.muted;
+
+  async function onConnectAccount() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const res = await connectWhoop();
+      if (!res.ok) setMessage(res.message);
+      await reload();
+    } catch {
+      setMessage("Couldn't open the WHOOP sign-in. Check your internet connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onDisconnectAccount() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await disconnectWhoop();
+    } catch {
+      setMessage("Couldn't disconnect right now. Try again in a moment.");
+    } finally {
+      await reload();
+      setBusy(false);
+    }
+  }
+
+  const ownAccount = account === "live" && !shared;
+  return (
+    <Card title="WHOOP">
+      <View style={styles.row}>
+        <View style={[styles.dot, { backgroundColor: dot }]} />
+        <Text style={styles.status} numberOfLines={1}>
+          {BAND_TEXT[hrStatus]}
+          {connected && hrDevice ? ` · ${hrDevice}` : ""}
+        </Text>
+        {searching && <ActivityIndicator size="small" color={colors.primary} />}
+        {connected && hr != null && <Text style={styles.liveHr}>♥ {hr}</Text>}
+      </View>
+      {hrError && !connected && !searching && <Text style={text.error}>{hrError}</Text>}
+      {!connected && (
+        <>
+          <Text style={text.help}>
+            In the WHOOP app, turn on Heart Rate Broadcast and keep the band close to your phone.
+          </Text>
+          <Button label="Connect band" onPress={() => whoopHr.connect()} disabled={searching} busy={searching} />
+        </>
+      )}
+
+      <View style={styles.divider} />
+
+      {account === null ? (
+        <Text style={text.help}>Checking your WHOOP account…</Text>
+      ) : account === "offline" ? (
+        <View style={styles.row}>
+          <Text style={[text.help, styles.flex]}>Can't check your WHOOP account right now.</Text>
+          <TextButton label="Try again" onPress={reload} />
+        </View>
+      ) : ownAccount ? (
+        <View style={styles.row}>
+          <Text style={[text.help, styles.flex]}>Your heart rate zones come from your WHOOP account.</Text>
+          <TextButton label="Disconnect" onPress={onDisconnectAccount} disabled={busy} />
+        </View>
+      ) : (
+        <>
+          <Text style={text.help}>Connect your WHOOP account to use your own heart rate zones.</Text>
+          <Button label="Connect account" variant="secondary" onPress={onConnectAccount} disabled={busy} busy={busy} />
+        </>
+      )}
+      {message && <Text style={text.error}>{message}</Text>}
+    </Card>
+  );
+}
+
+function ZoneCard({ whoop }: { whoop: WhoopSummary | null }) {
+  const mode = useSession((s) => s.mode);
+  const hrZone = useSession((s) => s.hrZone);
+  const paceZone = useSession((s) => s.paceZone);
+  const { setMode, setZone } = useSession.getState();
 
   const zone = mode === "hr" ? hrZone : paceZone;
   const step = mode === "hr" ? 1 : 15;
@@ -198,257 +213,149 @@ export default function SetupScreen() {
     if (next.min >= next.max) return; // keep min < max
     setZone(mode, next);
   };
-
-  const zoneValue = mode === "hr" ? hrZone : paceZone;
-  const liveHr = sim || connected ? hr : null;
-  const whoopDot = whoopMode === "live" ? colors.ok : whoopMode === "offline" ? colors.error : colors.muted;
-  const hrDot = sim || connected ? colors.ok : busy ? colors.primary : colors.muted;
-  const hrChip = sim ? "Simulated HR" : connected ? `HR ${hrSource === "phone" ? "via phone" : "via laptop"}` : "No heart rate";
+  const zones = mode === "hr" ? (whoop?.hr_zones ?? []) : [];
 
   return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <View>
-            <Eyebrow>{canStart ? "Ready to run" : "Getting ready"}</Eyebrow>
-            <Text style={text.h1}>BPM Coach</Text>
-          </View>
-          <Pill label={liveHr != null ? `♥ ${liveHr}` : "♥ --"} color={liveHr != null ? colors.hr : colors.muted} />
+    <Card
+      title="Target zone"
+      right={
+        <View style={{ width: 170 }}>
+          <Segmented<ZoneMode>
+            options={[
+              { value: "hr", label: "Heart rate" },
+              { value: "pace", label: "Pace" },
+            ]}
+            value={mode}
+            onChange={setMode}
+          />
         </View>
-
-        <View style={styles.chips}>
-          <Pill label="Whoop" dot={whoopDot} />
-          <Pill label={hrChip} dot={hrDot} />
-          {musicSource === "spotify" && (
-            <Pill label="Spotify" dot={spotifyMode === "live" ? colors.ok : spotifyMode === "offline" ? colors.error : colors.muted} />
-          )}
+      }
+    >
+      {zones.length > 0 && (
+        <View style={styles.zones}>
+          {zones.map((z) => {
+            const active = hrZone.min === z.min_bpm && hrZone.max === z.max_bpm;
+            return (
+              <Pressable
+                key={z.zone}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => setZone("hr", { min: z.min_bpm, max: z.max_bpm })}
+                style={[styles.zoneTile, active && styles.zoneTileActive]}
+              >
+                <Text style={[styles.zoneName, active && styles.onPrimary]}>Z{z.zone}</Text>
+                <Text style={[styles.zoneRange, active && styles.onPrimaryMuted]}>
+                  {z.min_bpm}–{z.max_bpm}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
-
-        <Card title="Heart rate">
-          <Segmented<HrSource> options={SOURCE_OPTIONS} value={hrSource} onChange={changeSource} />
-
-          <View style={styles.row}>
-            <View style={[styles.dot, { backgroundColor: hrDot }]} />
-            <Text style={styles.status}>
-              {sim ? "Simulated HR (follows your cadence)" : STATUS_TEXT[hrSource][hrStatus]}
-              {!sim && hrDevice && connected ? ` · ${hrDevice}` : ""}
-            </Text>
-            {!sim && busy && <ActivityIndicator size="small" color={colors.primary} />}
-            {!sim && connected && hr != null && <Text style={styles.liveHr}>{hr} bpm</Text>}
-          </View>
-
-          {!sim && hrError && !connected && <Text style={text.error}>{hrError}</Text>}
-
-          {hrSource === "laptop" && !connected && (
-            <Text style={text.help}>
-              On the laptop: start the backend, turn on Heart Rate Broadcast in the Whoop app, then run{" "}
-              <Text style={styles.code}>python scripts/whoop_live_hr.py</Text> in backend/. Keep the band near the laptop.
-            </Text>
-          )}
-
-          {hrSource === "phone" && (
-            <>
-              {!connected && (
-                <Text style={text.help}>
-                  In the Whoop app, open your device settings and turn on Heart Rate Broadcast. Keep the strap close to
-                  your phone, then tap Connect.
-                </Text>
-              )}
-              {connected ? (
-                <Button label="Disconnect" variant="secondary" onPress={() => whoopHr.disconnect()} />
-              ) : (
-                <Button label="Connect Whoop" onPress={() => whoopHr.connect()} disabled={busy} busy={busy} />
-              )}
-            </>
-          )}
-
-          {isExpoGo && <Text style={text.help}>Phone Bluetooth needs a development build, so it's hidden in Expo Go.</Text>}
-
-          <View style={styles.row}>
-            <Text style={[styles.status, { flex: 1 }]}>Simulated running (test at a desk)</Text>
-            <Switch
-              value={simMotion}
-              onValueChange={setSimMotion}
-              trackColor={{ true: colors.primary, false: colors.surface2 }}
-              thumbColor={colors.text}
-            />
-          </View>
-        </Card>
-
-        <Card title="Whoop account">
-          <View style={styles.row}>
-            <View style={[styles.dot, { backgroundColor: whoopDot }]} />
-            <Text style={styles.status}>
-              {whoopShared ? "Using the laptop's shared Whoop login" : WHOOP_MODE_TEXT[whoopMode ?? "loading"]}
-            </Text>
-            {whoopBusy && <ActivityIndicator size="small" color={colors.primary} />}
-          </View>
-          {whoopMsg && <Text style={text.error}>{whoopMsg}</Text>}
-          {(whoopMode === "not_connected" || whoopShared) && (
-            <Button
-              label={whoopShared ? "Connect my own Whoop" : "Connect Whoop account"}
-              onPress={onConnectWhoop}
-              disabled={whoopBusy}
-            />
-          )}
-          {whoopMode === "live" && !whoopShared && (
-            <Button label="Disconnect Whoop account" variant="secondary" onPress={onDisconnectWhoop} disabled={whoopBusy} />
-          )}
-          {whoopMode === "offline" && <Button label="Retry" variant="secondary" onPress={loadWhoop} />}
-        </Card>
-
-        <Card
-          title="Target zone"
-          right={
-            <View style={{ width: 170 }}>
-              <Segmented<ZoneMode>
-                options={[
-                  { value: "hr", label: "Heart rate" },
-                  { value: "pace", label: "Pace" },
-                ]}
-                value={mode}
-                onChange={setMode}
-              />
-            </View>
-          }
-        >
-          {mode === "hr" && whoop && whoop.hr_zones.length > 0 && (
-            <View style={styles.zones}>
-              {whoop.hr_zones.map((z) => {
-                const active = hrZone.min === z.min_bpm && hrZone.max === z.max_bpm;
-                return (
-                  <Pressable
-                    key={z.zone}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    onPress={() => setZone("hr", { min: z.min_bpm, max: z.max_bpm })}
-                    style={[styles.zoneTile, active && styles.zoneTileActive]}
-                  >
-                    <Text style={[styles.zoneName, active && styles.onPrimary]}>Z{z.zone}</Text>
-                    <Text style={[styles.zoneRange, active && styles.onPrimaryMuted]}>
-                      {z.min_bpm}–{z.max_bpm}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-          <View style={styles.row}>
-            <Stepper
-              label={mode === "hr" ? "min bpm" : "fastest /km"}
-              value={zoneValue.min}
-              display={fmt(zoneValue.min)}
-              step={step}
-              onChange={(v) => updateZone("min", v)}
-            />
-            <View style={{ width: spacing.lg }} />
-            <Stepper
-              label={mode === "hr" ? "max bpm" : "slowest /km"}
-              value={zoneValue.max}
-              display={fmt(zoneValue.max)}
-              step={step}
-              onChange={(v) => updateZone("max", v)}
-            />
-          </View>
-          {mode === "hr" && whoop && whoop.mode !== "live" && whoop.hr_zones.length > 0 && (
-            <Text style={text.help}>Zones from sample data. Connect your Whoop account for your own.</Text>
-          )}
-        </Card>
-
-        <Card title="Music">
-          <View style={styles.sources}>
-            {MUSIC_OPTIONS.map((o) => {
-              const active = o.value === musicSource;
-              return (
-                <Pressable
-                  key={o.value}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => setMusicSource(o.value)}
-                  style={[styles.source, active && styles.sourceActive]}
-                >
-                  <View style={styles.sourceIcon}>
-                    <Text style={[styles.sourceGlyph, { color: active ? colors.primary : colors.text }]}>{o.glyph}</Text>
-                  </View>
-                  <Text style={styles.sourceName}>{o.label}</Text>
-                  <Text style={styles.sourceDesc}>{o.desc}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Text style={text.help}>
-            {musicSource === "dj"
-                ? "Real songs from Jamendo (Creative Commons), each locked to the exact BPM and blended into the next like a DJ. Artist and license are shown while playing."
-                : musicSource === "apple"
-                ? "Plays songs from your Apple Music library that are close to the target tempo, sped up or slowed down by up to 10% (pitch kept) to land on the beat. Needs the Xcode build of the app, not Expo Go."
-                : `Plays songs from your Liked Songs at the target tempo, switching song by song. Tip: turn on Crossfade in Spotify (Settings → Playback) so songs blend. ${
-                    spotifyShared ? "Using the laptop's shared Spotify login." : SPOTIFY_MODE_TEXT[spotifyMode ?? "loading"]
-                  }`}
-          </Text>
-          {musicSource === "spotify" && (
-            <>
-              {spotifyMsg && <Text style={text.error}>{spotifyMsg}</Text>}
-              {(spotifyMode === "not_connected" || spotifyShared) && (
-                <Button
-                  label={spotifyShared ? "Connect my own Spotify" : "Connect Spotify"}
-                  onPress={onConnectSpotify}
-                  disabled={spotifyBusy}
-                  busy={spotifyBusy}
-                />
-              )}
-              {spotifyMode === "live" && !spotifyShared && (
-                <Button label="Disconnect Spotify" variant="secondary" onPress={onDisconnectSpotify} disabled={spotifyBusy} />
-              )}
-              {spotifyMode === "offline" && <Button label="Retry" variant="secondary" onPress={loadSpotify} />}
-              {spotifyMode !== "offline" && (
-                <Text style={text.help}>
-                  Open Spotify on your phone and play any song first, so there's an active device to control.
-                </Text>
-              )}
-              <Link href="/music" style={styles.link}>
-                Spotify music screen →
-              </Link>
-            </>
-          )}
-          {musicSource === "apple" && (
-            <Link href="/apple-music" style={styles.link}>
-              Apple Music library and tempos →
-            </Link>
-          )}
-        </Card>
-
-        {warnings.map((w) => (
-          <Text key={w} style={text.error}>
-            {w}
-          </Text>
-        ))}
-
-        <Button label={starting ? "Starting…" : "▶  Start workout"} onPress={onStart} disabled={!canStart || starting} busy={starting} />
-        <Button label="Past runs" variant="secondary" onPress={() => router.push("/runs")} />
-        {!canStart && (
-          <Text style={[text.help, { textAlign: "center" }]}>Waiting for live heart rate, or pick Simulated to start now.</Text>
-        )}
-      </ScrollView>
-    </SafeAreaView>
+      )}
+      <View style={styles.row}>
+        <Stepper
+          label={mode === "hr" ? "min bpm" : "fastest /km"}
+          value={zone.min}
+          display={fmt(zone.min)}
+          step={step}
+          onChange={(v) => updateZone("min", v)}
+        />
+        <View style={{ width: spacing.lg }} />
+        <Stepper
+          label={mode === "hr" ? "max bpm" : "slowest /km"}
+          value={zone.max}
+          display={fmt(zone.max)}
+          step={step}
+          onChange={(v) => updateZone("max", v)}
+        />
+      </View>
+      <Text style={text.help}>
+        {mode === "hr"
+          ? "The music speeds up when your heart rate is below the zone and slows down when it's above."
+          : "The music speeds up when you're slower than the zone and slows down when you're faster."}
+      </Text>
+    </Card>
   );
 }
 
-const MUSIC_OPTIONS: { value: MusicSource; label: string; desc: string; glyph: string }[] = [
-  { value: "spotify", label: "Spotify", desc: "Your songs, picked by tempo", glyph: "♫" },
-  { value: "dj", label: "DJ", desc: "Open songs locked to the beat", glyph: "◉" },
-  { value: "apple", label: "Apple Music", desc: "Your library, sped to the beat", glyph: "♪" },
-];
+/** The playlist the workout plays from, and how close its songs are to ready. */
+function MusicCard({ disabled }: { disabled: boolean }) {
+  const playlist = useSession((s) => s.playlist);
+  const prep = useMusicPrep();
+  const left = prep.total - prep.checked;
+
+  return (
+    <Card title="Music">
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={playlist ? `Playlist ${playlist.name}. Change playlist` : "Choose a playlist"}
+        disabled={disabled}
+        onPress={() => router.push("/playlists")}
+        style={({ pressed }) => [styles.playlist, pressed && { opacity: 0.8 }]}
+      >
+        <Artwork uri={playlist?.artworkUri} size={48} />
+        <View style={styles.flex}>
+          <Text style={styles.playlistName} numberOfLines={1}>
+            {playlist ? playlist.name : "Choose a playlist"}
+          </Text>
+          <Text style={text.help} numberOfLines={1}>
+            {playlist ? songCount(prep.total || playlist.count) : "From your Apple Music library"}
+          </Text>
+        </View>
+        <Text style={styles.chevron}>›</Text>
+      </Pressable>
+
+      {!playlist ? (
+        <Text style={text.help}>
+          The workout plays only songs from this playlist, sped up or slowed down a little (pitch kept) so the beat
+          matches your target.
+        </Text>
+      ) : prep.status === "error" ? (
+        <>
+          <Text style={text.error}>{prep.error}</Text>
+          <Button label="Try again" variant="secondary" onPress={() => prepare(playlist.id).catch(() => {})} />
+        </>
+      ) : prep.status === "ready" ? (
+        <View style={styles.row}>
+          <View style={[styles.dot, { backgroundColor: colors.ok }]} />
+          <Text style={[text.help, styles.flex]}>
+            {prep.looking && left > 0
+              ? `Ready · checking the tempo of ${songCount(left)} more`
+              : `Ready · ${prep.playable} of ${songCount(prep.total)} can play`}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.row}>
+          <ActivityIndicator size="small" color={colors.primary} />
+          <Text style={[text.help, styles.flex]}>
+            {prep.total ? `Getting your songs ready… ${prep.checked} of ${prep.total}` : "Getting your songs ready…"}
+          </Text>
+        </View>
+      )}
+    </Card>
+  );
+}
+
+function TextButton({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  return (
+    <Pressable accessibilityRole="button" onPress={onPress} disabled={disabled} hitSlop={8}>
+      <Text style={[styles.textButton, disabled && { opacity: 0.4 }]}>{label}</Text>
+    </Pressable>
+  );
+}
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { padding: spacing.lg, paddingTop: spacing.sm, gap: 16, paddingBottom: spacing.xl },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  header: { gap: 2, paddingVertical: spacing.xs },
   row: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  flex: { flex: 1 },
+  centerText: { textAlign: "center" },
   dot: { width: 8, height: 8, borderRadius: 4 },
   status: { fontSize: 15, color: colors.text, flexShrink: 1 },
   liveHr: { marginLeft: "auto", fontSize: 15, fontWeight: "700", color: colors.hr },
-  code: { fontFamily: "Menlo", fontSize: 12, color: colors.text },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+  textButton: { fontSize: 14, fontWeight: "700", color: colors.primary },
   zones: { flexDirection: "row", gap: 6 },
   zoneTile: {
     flex: 1,
@@ -464,27 +371,14 @@ const styles = StyleSheet.create({
   zoneRange: { fontSize: 11, color: colors.muted, fontVariant: ["tabular-nums"] },
   onPrimary: { color: colors.onPrimary },
   onPrimaryMuted: { color: "rgba(10,11,15,0.7)" },
-  sources: { flexDirection: "row", gap: 10 },
-  source: {
-    flex: 1,
-    borderRadius: 18,
-    backgroundColor: colors.surface2,
-    padding: 12,
-    gap: 8,
-    borderWidth: 2,
-    borderColor: "transparent",
-  },
-  sourceActive: { borderColor: colors.primary, backgroundColor: "rgba(200,255,61,0.08)" },
-  sourceIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: colors.card,
+  playlist: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: 14,
+    padding: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
   },
-  sourceGlyph: { fontSize: 18, fontWeight: "700" },
-  sourceName: { fontSize: 15, fontWeight: "700", color: colors.text },
-  sourceDesc: { fontSize: 11, color: colors.muted, lineHeight: 15 },
-  link: { textAlign: "center", color: colors.primary, fontSize: 14, fontWeight: "600", paddingVertical: spacing.sm },
+  playlistName: { fontSize: 16, fontWeight: "700", color: colors.text },
+  chevron: { fontSize: 26, color: colors.muted, paddingHorizontal: spacing.xs },
 });

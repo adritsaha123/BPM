@@ -64,10 +64,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 // ---- Typed endpoints (mirror backend/app/routes) ----
 
 export type WhoopMode = "live" | "mock" | "not_connected";
-export type SpotifyMode = "live" | "mock" | "not_connected";
-export type Health = { status: string; ai: "live" | "mock"; whoop?: WhoopMode; spotify?: SpotifyMode };
+export type Health = { status: string; ai: "live" | "mock"; whoop?: WhoopMode };
 
-// ---- WHOOP (history) + live heart rate. See docs/WHOOP.md ----
+// ---- WHOOP: account, history and heart rate zones. See docs/WHOOP.md ----
 
 export type HrZone = { zone: number; min_bpm: number; max_bpm: number };
 
@@ -103,41 +102,7 @@ export type WhoopSummary = {
   recent_runs: WhoopWorkout[];
 };
 
-export type LiveHr = {
-  bpm: number | null;
-  source: string | null;
-  age_s: number | null;
-  avg_bpm: number | null;
-  recent: { bpm: number; ts: number }[];
-};
-
-// ---- Spotify + live BPM sync (song tempo vs heart rate). See docs/SPOTIFY.md ----
-
-/** DJ mode song (Jamendo, Creative Commons): the app plays it itself, stretched to the target. */
-export type DjTrack = {
-  id: string;
-  name: string;
-  artist: string;
-  /** stream URL (mp3) */
-  audio: string;
-  image: string | null;
-  /** Jamendo page, for credit */
-  url: string | null;
-  duration_s: number | null;
-  /** measured tempo of the recording */
-  bpm: number;
-  running_bpm: number;
-  energy: number | null;
-  /** e.g. "CC BY-SA 3.0": show it with the song (the license requires credit) */
-  license: string;
-  license_url: string;
-  style: string;
-  match: TempoMatch | null;
-  /** time-stretch that lands it exactly on the target (within ±8%) */
-  playback_rate: number;
-  reachable: boolean;
-  fit_score: number;
-};
+// ---- Song tempos for the Apple Music player on the phone. See docs/APPLE_MUSIC.md ----
 
 export type TempoMatch = {
   song_bpm: number;
@@ -147,101 +112,8 @@ export type TempoMatch = {
   multiple: 0.5 | 1 | 2;
   diff_bpm: number;
   status: "in_sync" | "close" | "off";
-  /** playback rate that would lock it in exactly (Spotify can't change speed: info only) */
+  /** playback rate that puts the song exactly on the target */
   speed_to_match: number;
-};
-
-export type SpotifyTrack = {
-  id: string;
-  uri: string;
-  name: string;
-  artists: string[];
-  album: string | null;
-  image: string | null;
-  duration_ms: number | null;
-  tempo: number | null;
-  /** 0-1 from ReccoBeats; null when unknown */
-  energy?: number | null;
-  danceability?: number | null;
-  /** ranking score from /spotify/match and /sync (lower = better fit) */
-  fit_score?: number;
-  match?: TempoMatch | null;
-};
-
-/** push = favor fast, high-energy songs; ease = calmer songs; hold = in the zone */
-export type Intensity = "push" | "hold" | "ease";
-
-export type SpotifyPlaylist = {
-  id: string; // "liked" = Liked Songs
-  name: string;
-  image: string | null;
-  owner: string | null;
-  track_count: number | null;
-};
-
-export type TargetSource = "manual" | "heart_rate" | "fallback" | null;
-
-/** Coach mode: the music leads the heart rate toward a training zone. */
-export type Coach = {
-  zone: number;
-  zone_min: number;
-  zone_max: number;
-  zones_source: "whoop" | "whoop_mock" | "default";
-  /** push = music a step faster than your HR, ease = a step slower, hold = matches your HR */
-  direction: "push" | "hold" | "ease";
-  target_bpm: number;
-};
-
-export type HrZones = { zones: HrZone[]; source: "whoop" | "whoop_mock" | "default" };
-
-export type NowPlaying = {
-  mode: SpotifyMode;
-  is_playing: boolean;
-  progress_ms: number | null;
-  track: SpotifyTrack | null;
-  heart_rate: { bpm: number | null; avg_bpm: number | null; age_s: number | null; live: boolean };
-  /** heart rate used for coaching: live, or the simulated one when there's no band */
-  current_bpm: number | null;
-  /** tempo the music aims for (= current_bpm unless coach mode moves it) */
-  target_bpm: number | null;
-  target_source: TargetSource;
-  coach: Coach | null;
-  match: TempoMatch | null;
-};
-
-export type MatchList = {
-  target_bpm: number | null;
-  target_source: TargetSource;
-  coach: Coach | null;
-  intensity: Intensity | null;
-  playlist_id: string;
-  tracks: SpotifyTrack[];
-  no_tempo_count: number;
-};
-
-export type SyncOptions = {
-  playlistId?: string;
-  targetBpm?: number;
-  fallbackBpm?: number;
-  /** 1-5: coach mode toward this heart rate zone */
-  zone?: number | null;
-  /** song energy to favor; defaults to the coach direction in coach mode */
-  intensity?: Intensity | null;
-  playNow?: boolean;
-};
-
-export type MatchOptions = { playlistId?: string; fallbackBpm?: number; zone?: number | null; limit?: number };
-
-// ---- Coach target + tempo lookup for the Apple Music player on the phone. See docs/APPLE_MUSIC.md ----
-
-export type CoachTarget = {
-  heart_rate: NowPlaying["heart_rate"];
-  /** heart rate used for coaching: live, or the simulated one when there's no band */
-  current_bpm: number | null;
-  /** tempo the music aims for (= current_bpm unless coach mode moves it) */
-  target_bpm: number | null;
-  target_source: TargetSource;
-  coach: Coach | null;
 };
 
 export type TempoInfo = {
@@ -262,13 +134,6 @@ export type TempoLookupTrack = {
   library_bpm?: number | null;
 };
 
-function query(params: Record<string, string | number | null | undefined>): string {
-  const parts = Object.entries(params)
-    .filter(([, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => `${k}=${encodeURIComponent(String(v))}`);
-  return parts.length ? `?${parts.join("&")}` : "";
-}
-
 export const api = {
   health: () => request<Health>("/health"),
 
@@ -279,79 +144,7 @@ export const api = {
   whoopLoginUrl: async (returnTo: string) =>
     `${API_URL}/whoop/login?${new URLSearchParams({ user: await getUserId(), return_to: returnTo })}`,
   whoopSummary: (days = 30) => request<WhoopSummary>(`/whoop/summary?days=${days}`),
-  /** Latest live bpm from the band (poll every 1-2s). bpm is null until the BLE script runs. */
-  liveHr: (windowS = 30) => request<LiveHr>(`/live/hr?window_s=${windowS}`),
-  /** Send a heart rate reading to the backend (the phone build reading the band itself). */
-  pushHr: (bpm: number, source: string) =>
-    request<void>("/live/hr", { method: "POST", body: JSON.stringify({ bpm, source }) }),
 
-  spotifyStatus: () =>
-    request<{ mode: SpotifyMode; login_url: string; user: string; shared?: boolean }>("/spotify/status"),
-  /** Browser URL that starts Spotify login for this user and returns to `returnTo` (an app URL). */
-  spotifyLoginUrl: async (returnTo: string) =>
-    `${API_URL}/spotify/login?${new URLSearchParams({ user: await getUserId(), return_to: returnTo })}`,
-  /** Forget this user's Spotify login on the backend. */
-  spotifyDisconnect: () => request<void>("/spotify/connection", { method: "DELETE" }),
-  spotifyPlaylists: () => request<SpotifyPlaylist[]>("/spotify/playlists"),
-  /** Heart rate zones coach mode can aim for (from WHOOP, or estimated). */
-  spotifyZones: () => request<HrZones>("/spotify/zones"),
-  /** Current song + tempo + heart rate + coach target + match. Poll every 1-2s.
-   * fallbackBpm is only used when there's no live heart rate; zone turns on coach mode. */
-  nowPlaying: (fallbackBpm?: number, zone?: number | null) =>
-    request<NowPlaying>(`/spotify/now-playing${query({ fallback_bpm: fallbackBpm, zone })}`),
-  /** Songs from a playlist ranked by how close their tempo is to the target. */
-  spotifyMatches: ({ playlistId = "liked", fallbackBpm, zone, limit = 10 }: MatchOptions = {}) =>
-    request<MatchList>(
-      `/spotify/match${query({ playlist_id: playlistId, fallback_bpm: fallbackBpm, zone, limit })}`,
-    ),
-  /** Queue (or play now) the best-matching song for the current heart rate. */
-  spotifySync: (opts: SyncOptions = {}) =>
-    request<{
-      action: "queued" | "playing";
-      target_bpm: number;
-      target_source: TargetSource;
-      coach: Coach | null;
-      track: SpotifyTrack;
-    }>(
-      "/spotify/sync",
-      {
-        method: "POST",
-        body: JSON.stringify({
-          playlist_id: opts.playlistId ?? "liked",
-          target_bpm: opts.targetBpm,
-          fallback_bpm: opts.fallbackBpm,
-          zone: opts.zone ?? null,
-          intensity: opts.intensity ?? null,
-          play_now: opts.playNow ?? false,
-        }),
-      },
-    ),
-  /** DJ mode: catalog size. */
-  djStatus: () => request<{ count: number; source: string; max_stretch: number }>("/dj/status"),
-  /** DJ mode: songs ranked for a target tempo (+ energy with an intensity), best first. */
-  djMatch: (opts: { targetBpm: number; intensity?: Intensity | null; exclude?: string[]; limit?: number }) =>
-    request<{ target_bpm: number; intensity: Intensity | null; count: number; tracks: DjTrack[] }>(
-      `/dj/match${query({
-        target_bpm: opts.targetBpm,
-        intensity: opts.intensity ?? undefined,
-        exclude: opts.exclude?.join(",") || undefined,
-        limit: opts.limit,
-      })}`,
-    ),
-  spotifyPlay: (uris?: string[]) =>
-    request<void>("/spotify/play", { method: "POST", body: JSON.stringify({ uris }) }),
-  spotifyPause: () => request<void>("/spotify/pause", { method: "POST" }),
-  /** Device volume; `supported` is false where Spotify refuses remote volume (usually iPhone). */
-  spotifyVolume: () => request<{ percent: number | null; supported: boolean }>("/spotify/volume"),
-  spotifySetVolume: (percent: number) =>
-    request<void>("/spotify/volume", { method: "PUT", body: JSON.stringify({ percent: Math.round(percent) }) }),
-  spotifyNext: () => request<void>("/spotify/next", { method: "POST" }),
-
-  /** Heart rate zones coach mode can aim for (from WHOOP, or estimated). */
-  coachZones: () => request<HrZones>("/coach/zones"),
-  /** Current heart rate and the tempo the music should aim for. Poll every 1-2s. */
-  coachTarget: (fallbackBpm?: number, zone?: number | null) =>
-    request<CoachTarget>(`/coach/target${query({ fallback_bpm: fallbackBpm, zone })}`),
   /** Song tempos by title + artist, at most 50 songs per call. null = unknown. The first lookup
    * of a song takes a moment (the backend asks Deezer + ReccoBeats); after that it's cached. */
   tempoLookup: (tracks: TempoLookupTrack[]) =>

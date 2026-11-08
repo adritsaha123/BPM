@@ -1,5 +1,9 @@
 # DJ mode (open-license music at the exact BPM)
 
+> **The app doesn't use DJ mode anymore.** Since November 2026 the workout music comes only from an
+> Apple Music playlist ([APPLE_MUSIC.md](APPLE_MUSIC.md)). The backend side described here is
+> still in the repo; the app's player and screens for it were removed.
+
 Spotify can only *pick* songs near the target tempo: its API gives no access to the audio. DJ mode
 uses openly licensed songs from **Jamendo** (Creative Commons) that the app streams and plays
 itself, so it can do what a DJ app does:

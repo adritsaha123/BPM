@@ -26,8 +26,7 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="workout" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="summary" options={{ headerShown: false, gestureEnabled: false }} />
-        <Stack.Screen name="music" options={{ title: "Spotify" }} />
-        <Stack.Screen name="apple-music" options={{ title: "Apple Music" }} />
+        <Stack.Screen name="playlists" options={{ title: "Choose a playlist" }} />
         <Stack.Screen name="run" options={{ title: "Run" }} />
         <Stack.Screen name="runs" options={{ title: "Past runs" }} />
       </Stack>
