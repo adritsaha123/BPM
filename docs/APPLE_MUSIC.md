@@ -26,10 +26,11 @@ same when it changes the speed, so voices don't sound like chipmunks.
 | Playlist picker | `mobile/src/app/playlists.tsx`, opened from the setup screen (`mobile/src/app/index.tsx`) |
 | Song tempos by title + artist | `POST /tempo/lookup` → `backend/app/tempo.py` |
 
-## Why Apple Music can change speed and Spotify can't
+## Why Apple Music
 
 Apple's MediaPlayer framework has a public playback speed setting (`currentPlaybackRate`) that
-works for Apple Music songs. Spotify has nothing like it and its terms forbid altering songs.
+works for Apple Music songs. Other streaming services give apps no speed control, so they could only
+pick songs that are close to the target, never land exactly on it.
 
 **There is no EQ.** Apple never gives apps the audio of Apple Music songs (they're DRM protected),
 so there's nothing to run through an equalizer. Apps like djay get that through a deal with Apple.

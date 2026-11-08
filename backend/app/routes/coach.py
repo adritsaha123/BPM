@@ -1,8 +1,7 @@
 """Coach target + tempo lookup for players that run on the phone (Apple Music).
 
-The Spotify routes compute targets themselves because the backend talks to Spotify. The Apple
-Music player lives inside the iPhone app, so the app asks here what tempo to aim for, and looks
-up song tempos by title + artist (Apple Music library songs have no Spotify id).
+The Apple Music player lives inside the iPhone app, so the app can ask here what tempo to aim
+for, and looks up song tempos by title + artist (Apple Music library songs carry no BPM).
 """
 
 from fastapi import APIRouter, Query

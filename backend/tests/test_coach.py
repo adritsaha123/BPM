@@ -56,6 +56,38 @@ def test_zones_endpoint():
     assert z["source"] == "default" and z["zones"][2] == {"zone": 3, "min_bpm": 133, "max_bpm": 152}
 
 
+# --------------------------------------------------------------------------- tempo math
+
+
+def test_match_handles_half_and_double_time():
+    m = tempo.match(85, 170)
+    assert m["multiple"] == 2.0 and m["effective_bpm"] == 170 and m["status"] == "in_sync"
+    assert tempo.match(180, 90)["multiple"] == 0.5
+    close = tempo.match(150, 156)
+    assert close["status"] == "close" and close["diff_bpm"] == -6 and close["speed_to_match"] == 1.04
+    assert tempo.match(120, 160)["status"] == "off"
+    assert tempo.match(None, 160) is None and tempo.match(120, None) is None
+
+
+def test_coach_steps_from_the_current_song_in_running_tempo():
+    # nothing playing: start from an easy running cadence (160)
+    assert tempo.coach_target(120, 133, 152) == {"target_bpm": 168, "direction": "push", "from_bpm": 160}
+    # one step (8) from the current song toward the zone, or the same tempo inside it
+    assert tempo.coach_target(120, 133, 152, song_bpm=164)["target_bpm"] == 172
+    assert tempo.coach_target(170, 133, 152, song_bpm=170)["target_bpm"] == 162
+    assert tempo.coach_target(140, 133, 152, song_bpm=165)["direction"] == "hold"
+    # half-time songs count at running cadence: 82 BPM runs at 164
+    assert tempo.coach_target(120, 133, 152, song_bpm=82)["from_bpm"] == 164
+    # never outside 150-185
+    assert tempo.coach_target(120, 133, 152, song_bpm=182)["target_bpm"] == 185
+    assert tempo.coach_target(175, 133, 152, song_bpm=152)["target_bpm"] == 150
+
+
+def test_running_tempo_folds_half_and_double_time():
+    assert tempo.running_tempo(85) == 170 and tempo.running_tempo(160) == 160
+    assert tempo.running_tempo(340) == 170 and tempo.running_tempo(128) == 128  # nothing fits: keep it
+
+
 # --------------------------------------------------------------------------- tempo by title + artist
 
 

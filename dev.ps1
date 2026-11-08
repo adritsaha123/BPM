@@ -91,7 +91,7 @@ Start-Window "BPM Expo" $mobile "$appEnv$expo"
 Write-Host ""
 Write-Host "Started. Scan the QR code in the 'BPM Expo' window with your iPhone Camera." -ForegroundColor Green
 if ($Cloud) {
-    Write-Host "Connect Whoop and Spotify from the app's setup screen."
+    Write-Host "Connect Whoop from the app's setup screen."
 } elseif ($NgrokDomain) {
     Write-Host "Connect Whoop from the app's 'Whoop account' card (first visit may show an ngrok warning page: tap Visit Site)."
 } else {

@@ -1,4 +1,4 @@
-"""Coach targets: what tempo the music should aim for right now. Shared by Spotify and Apple Music.
+"""Coach targets: what tempo the music should aim for right now. Used by the Apple Music player.
 
 - target_bpm given: exactly that (manual override, no coaching).
 - Otherwise start from the current heart rate: live from /live/hr (a reading in the last 15 s),

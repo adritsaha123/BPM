@@ -16,10 +16,10 @@ def fresh_settings():
 def test_files_without_database(monkeypatch, tmp_path):
     monkeypatch.setenv("DATABASE_URL", "")
     f = tmp_path / "t.json"
-    assert token_store.load("spotify:x", f) is None
-    token_store.save("spotify:x", f, {"access_token": "a"})
-    assert token_store.load("spotify:x", f) == {"access_token": "a"}
-    token_store.delete("spotify:x", f)
+    assert token_store.load("whoop:x", f) is None
+    token_store.save("whoop:x", f, {"access_token": "a"})
+    assert token_store.load("whoop:x", f) == {"access_token": "a"}
+    token_store.delete("whoop:x", f)
     assert not f.exists()
 
 

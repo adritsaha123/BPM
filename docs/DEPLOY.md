@@ -1,11 +1,11 @@
 # Deploy the backend (Render + Neon, free)
 
 Runs the backend in the cloud so the phone works on any network without your laptop hosting it.
-Spotify and WHOOP logins are saved in a free Neon Postgres database, because Render's free disk is
+WHOOP logins and saved runs are kept in a free Neon Postgres database, because Render's free disk is
 wiped on every restart and deploy.
 
 ```
-iPhone app ──https──▶ Render (FastAPI, render.yaml) ──▶ Spotify / WHOOP / ReccoBeats
+iPhone app ──https──▶ Render (FastAPI, render.yaml) ──▶ WHOOP / Deezer / ReccoBeats
                               │
                               └──▶ Neon Postgres (oauth_tokens table: one row per login)
 ```
@@ -28,22 +28,17 @@ version: merge into `main`, then update `render` (see the end of this file).
    | Key | Value |
    |---|---|
    | `DATABASE_URL` | the Neon connection string |
-   | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | same as `backend/.env` |
-   | `SPOTIFY_REDIRECT_URI` | `https://<service>.onrender.com/spotify/callback` |
    | `WHOOP_CLIENT_ID`, `WHOOP_CLIENT_SECRET` | same as `backend/.env` |
    | `WHOOP_REDIRECT_URI` | `https://<service>.onrender.com/whoop/callback` |
    | `ANTHROPIC_API_KEY` | optional (blank = mock AI) |
 
    Don't know the service URL yet? Enter a placeholder, deploy, copy the URL from the service page
-   (e.g. `https://bpm-backend-ab12.onrender.com`), then fix both redirect values under
+   (e.g. `https://bpm-backend-ab12.onrender.com`), then fix the redirect value under
    **Environment** and save (Render redeploys).
-3. Check **https://\<service\>.onrender.com/health** shows `"status":"ok"`, `"spotify":"not_connected"` or `"live"`.
+3. Check **https://\<service\>.onrender.com/health** shows `"status":"ok"`.
 
-## 3. Redirect URLs on the developer dashboards
-Each service only sends people back to addresses you list:
-- **Spotify** (developer.spotify.com/dashboard → your app → Settings → Redirect URIs): add
-  `https://<service>.onrender.com/spotify/callback`. Keep the 127.0.0.1 one for laptop use.
-  Also make sure every Spotify account that will log in is under **User Management**.
+## 3. Redirect URL on the WHOOP dashboard
+WHOOP only sends people back to addresses you list:
 - **WHOOP** (developer-dashboard.whoop.com → BPM → Redirect URLs): add
   `https://<service>.onrender.com/whoop/callback`.
 

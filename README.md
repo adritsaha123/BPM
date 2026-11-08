@@ -120,7 +120,7 @@ The iOS Simulator has no Bluetooth, GPS or Music library, so use a real iPhone.
 | `runtime.ts` | `isExpoGo` flag: switches Bluetooth and background GPS off in Expo Go |
 | `app/` | Expo Router screens: `index` (setup), `playlists` (pick the playlist), `workout` (live), `summary` (after a run), `runs` / `run` (past runs) |
 | `sources/` | `whoopBle` (live HR over Bluetooth), `pedometer` (cadence), `location` (pace + background), `route` (GPS track of the run) |
-| `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop), `summary.ts` (run stats) |
+| `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop), `pace.ts` (running pace from GPS), `summary.ts` (run stats) |
 | `audio/` | `music.ts` (what the workout loop calls), `appleMusicOutput.ts` (plays the chosen playlist: songs picked by tempo, sped up or slowed down) |
 | `store/` | Zustand stores: `bio` (live biometrics), `session` (zone, playlist, target BPM, log) |
 
@@ -193,14 +193,14 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 - **Apple Music player (playlist, song choice, speed):** `mobile/src/audio/appleMusicOutput.ts`, native side in `mobile/modules/apple-music/`. Details in `docs/APPLE_MUSIC.md`
 - **Song tempos (lookup by title + artist):** `backend/app/tempo.py`, `POST /tempo/lookup` in `routes/coach.py`
 - **WHOOP account + history:** `backend/app/whoop.py`, `routes/whoop.py`. Live heart rate over Bluetooth: `mobile/src/sources/whoopBle.ts`. Setup in `docs/WHOOP.md`
-- **Spotify and DJ mode** are backend only now (the app doesn't use them): `docs/SPOTIFY.md`, `docs/DJ.md`
+- **GPS pace and routes:** `mobile/src/engine/pace.ts` (pace for the coach), `mobile/src/sources/route.ts` + `backend/app/routes/runs.py` (recorded runs, Past runs screen)
 - **New endpoint:** add a router in `backend/app/routes/` (see `live.py` for a small one)
 - **New screen:** add a file to `mobile/src/app/` (Expo Router)
 - **BPM rules (step size, cooldown, limits):** `TEMPO_CONTROL` / `SONG_ROTATE` in `mobile/src/engine/controller.ts`
 - **Colors and spacing:** `mobile/src/theme.ts`
 
-## Deploying for the demo (optional)
-Running on a laptop is fine for most judging. For a public URL, deploy `backend/` to Render or Railway with start command `uvicorn app.main:app --host 0.0.0.0 --port $PORT`, set `ANTHROPIC_API_KEY` there, and point `EXPO_PUBLIC_API_URL` at it.
+## Deploying
+The backend is hosted on Render (free plan) with a Neon Postgres database for WHOOP logins and saved runs: `https://bpm-backend-bx41.onrender.com`. Release builds of the app use it automatically. Render deploys the `render` branch, a copy of `main`; setup and updating are in `docs/DEPLOY.md`.
 
 ## Commands
 | | |

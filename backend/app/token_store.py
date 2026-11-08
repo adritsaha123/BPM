@@ -1,10 +1,10 @@
-"""Where OAuth tokens (WHOOP, Spotify) are kept.
+"""Where OAuth tokens (WHOOP) are kept.
 
 - DATABASE_URL set (the cloud deploy, e.g. a free Neon Postgres): one row per login in the
   `oauth_tokens` table, so logins survive restarts and redeploys (Render's disk is wiped on both).
 - Otherwise (the laptop): a JSON file per login, as before. Gitignored.
 
-Keys look like "whoop:<user id>" and "spotify:<user id>"; `file` is where that login lives on disk.
+Keys look like "whoop:<user id>"; `file` is where that login lives on disk.
 """
 
 from __future__ import annotations

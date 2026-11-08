@@ -21,6 +21,5 @@ node_modules/
 !.vscode/extensions.json
 
 # WHOOP OAuth tokens and exported health data — never commit
-.whoop_tokens*.json
+.*_tokens*.json
 backend/data/
-.spotify_tokens*.json
