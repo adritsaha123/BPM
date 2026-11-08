@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import { Platform } from "react-native";
+import { Platform, type TurboModule, TurboModuleRegistry } from "react-native";
 
 /**
  * Where is the backend?
@@ -11,11 +11,27 @@ function resolveApiUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
   if (fromEnv) return fromEnv.replace(/\/$/, "");
 
-  const host = Constants.expoConfig?.hostUri?.split(":")[0];
+  const host = devServerHost();
   if (host) return `http://${host}:8000`;
 
   // Android emulator reaches the host machine via 10.0.2.2
   return Platform.OS === "android" ? "http://10.0.2.2:8000" : "http://localhost:8000";
+}
+
+interface SourceCode extends TurboModule {
+  getConstants(): { scriptURL: string };
+}
+
+/**
+ * IP of the laptop serving the app's JavaScript. Expo Go reports it in hostUri. Builds installed
+ * from Xcode (or expo run:ios) have no hostUri, so read it from the bundle URL instead, e.g.
+ * http://192.168.1.20:8081/.expo/.virtual-metro-entry.bundle?platform=ios
+ */
+function devServerHost(): string | undefined {
+  const fromExpo = Constants.expoConfig?.hostUri?.split(":")[0];
+  if (fromExpo || Platform.OS === "web") return fromExpo;
+  const scriptUrl = TurboModuleRegistry.get<SourceCode>("SourceCode")?.getConstants().scriptURL;
+  return scriptUrl?.match(/^https?:\/\/([^/:]+)/)?.[1];
 }
 
 export const API_URL = resolveApiUrl();
