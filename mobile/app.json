@@ -10,7 +10,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.bpmemergent.bpm",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppleMusicUsageDescription": "BPM Coach plays songs from your Apple Music library and adjusts their tempo to match your heart rate."
       }
     },
     "extra": {

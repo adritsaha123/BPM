@@ -1,13 +1,13 @@
 # Apple Music + speed control
 
-The **Apple Music** tab plays songs from your Apple Music library and **changes their speed so the
+The **Apple Music** music source plays songs from your Apple Music library and **changes their speed so the
 beat follows your heart rate**. iOS keeps the pitch the same when it changes the speed, so voices
 don't sound like chipmunks.
 
 - **Lock to my heart rate** (on by default): speed = target tempo ÷ song tempo, at most ±10% from
   normal (you can pick ±5, ±10 or ±20%). It changes in 0.5% steps, so small heart rate wobbles
   don't keep nudging it. Half and double time count: an 85 BPM song locks to a heart rate of 170.
-- **Coach me into a zone** works like on the Spotify tab (see [SPOTIFY.md](SPOTIFY.md)). The
+- **Coach me into a zone** works like Spotify coaching (see [SPOTIFY.md](SPOTIFY.md)). The
   music aims a step faster or slower than your heart rate to steer you into the zone.
 - **Match my BPM** plays the library song that needs the smallest speed change, then queues the
   29 next best, so music keeps going even if the app goes to sleep.
@@ -37,7 +37,7 @@ so there's nothing to run through an equalizer. Apps like djay get that through 
 - A **Mac with Xcode**. A free Apple ID is enough. The $99 developer program isn't needed, because
   this uses the MediaPlayer framework, not MusicKit.
 - It does **not** run in Expo Go, on the web, on Android or in the iOS Simulator (the Simulator
-  has no Music library). The tab explains this instead of crashing.
+  has no Music library). The Apple Music screen explains this instead of crashing, and a workout falls back to DJ mode.
 
 ## 1. One-time Mac setup
 
@@ -72,22 +72,22 @@ so there's nothing to run through an equalizer. Apps like djay get that through 
    **Or from Xcode:**
    1. Start the dev server and leave it running: `cd mobile && npx expo start`. Xcode's ▶ makes a
       debug build, which loads the app's code from the dev server.
-   2. `open ios/HackathonApp.xcworkspace`. Open the `.xcworkspace`, not the `.xcodeproj`. If
+   2. `open ios/BPMCoach.xcworkspace`. Open the `.xcworkspace`, not the `.xcodeproj`. If
       `mobile/ios` doesn't exist yet, run `npx expo prebuild --platform ios` first. It also
       changes the `ios`/`android` scripts in `package.json`; don't commit that.
-   3. Click **HackathonApp** at the top of the file list → **Signing & Capabilities** → **Team**:
+   3. Click **BPMCoach** at the top of the file list → **Signing & Capabilities** → **Team**:
       your Personal Team.
    4. Pick your iPhone in the device menu at the top of the window and press **▶** (⌘R).
    5. When the phone asks to find devices on your local network, tap **Allow**. That's how it
       reaches the laptop. If it then shows a red error screen, press ⌘R again.
 5. First time only, on the iPhone: **Settings → General → VPN & Device Management →** your Apple ID
    **→ Trust**. Then open the app.
-6. **Apple Music** tab → **Connect Apple Music** → **Allow**.
+6. Setup screen → Music → **Apple Music** → "Apple Music library and tempos" → **Connect Apple Music** → **Allow**. Then pick Apple Music as the music source and start a workout: songs are chosen by tempo and sped up or slowed down (max ±10%) as the coach changes the target.
 
 If the build stops with *"Signing … requires a development team"*: open
 `mobile/ios/*.xcworkspace` in Xcode, click the app target → **Signing & Capabilities** → Team =
 your Personal Team, and build again. Each person installing it needs their own bundle id. If Xcode
-says `com.willdupont.bpm` is taken, change `ios.bundleIdentifier` in `mobile/app.json` (for
+says `com.bpmemergent.bpm` is taken, change `ios.bundleIdentifier` in `mobile/app.json` (for
 example `com.yourname.bpm`) and run `npx expo prebuild --clean --platform ios`.
 
 With a free Apple ID the app stops opening after **7 days**. Run step 4 again to reinstall it.

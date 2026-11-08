@@ -379,6 +379,8 @@ export default function SetupScreen() {
           <Text style={text.help}>
             {musicSource === "dj"
                 ? "Real songs from Jamendo (Creative Commons), each locked to the exact BPM and blended into the next like a DJ. Artist and license are shown while playing."
+                : musicSource === "apple"
+                ? "Plays songs from your Apple Music library that are close to the target tempo, sped up or slowed down by up to 10% (pitch kept) to land on the beat. Needs the Xcode build of the app, not Expo Go."
                 : `Plays songs from your Liked Songs at the target tempo, switching song by song. Tip: turn on Crossfade in Spotify (Settings → Playback) so songs blend. ${
                     spotifyShared ? "Using the laptop's shared Spotify login." : SPOTIFY_MODE_TEXT[spotifyMode ?? "loading"]
                   }`}
@@ -408,6 +410,11 @@ export default function SetupScreen() {
               </Link>
             </>
           )}
+          {musicSource === "apple" && (
+            <Link href="/apple-music" style={styles.link}>
+              Apple Music library and tempos →
+            </Link>
+          )}
         </Card>
 
         {warnings.map((w) => (
@@ -428,6 +435,7 @@ export default function SetupScreen() {
 const MUSIC_OPTIONS: { value: MusicSource; label: string; desc: string; glyph: string }[] = [
   { value: "spotify", label: "Spotify", desc: "Your songs, picked by tempo", glyph: "♫" },
   { value: "dj", label: "DJ", desc: "Open songs locked to the beat", glyph: "◉" },
+  { value: "apple", label: "Apple Music", desc: "Your library, sped to the beat", glyph: "♪" },
 ];
 
 const styles = StyleSheet.create({

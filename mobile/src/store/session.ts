@@ -17,7 +17,7 @@ export type Zone = { min: number; max: number };
 export type HrSource = "laptop" | "phone" | "sim";
 
 /** Where the music comes from: DJ mode (open-license songs at the exact BPM) or Spotify (songs picked by tempo). */
-export type MusicSource = "spotify" | "dj";
+export type MusicSource = "spotify" | "dj" | "apple";
 
 export type Adjustment = { at: number; from: number; to: number; reason: string };
 

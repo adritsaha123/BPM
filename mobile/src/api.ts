@@ -232,6 +232,36 @@ export type SyncOptions = {
 
 export type MatchOptions = { playlistId?: string; fallbackBpm?: number; zone?: number | null; limit?: number };
 
+// ---- Coach target + tempo lookup for the Apple Music player on the phone. See docs/APPLE_MUSIC.md ----
+
+export type CoachTarget = {
+  heart_rate: NowPlaying["heart_rate"];
+  /** heart rate used for coaching: live, or the simulated one when there's no band */
+  current_bpm: number | null;
+  /** tempo the music aims for (= current_bpm unless coach mode moves it) */
+  target_bpm: number | null;
+  target_source: TargetSource;
+  coach: Coach | null;
+};
+
+export type TempoInfo = {
+  bpm: number;
+  /** library = BPM tag on the song itself */
+  source: "reccobeats" | "deezer" | "library";
+  /** the recording it was matched to, e.g. "Song - Artist" */
+  matched?: string;
+  isrc?: string | null;
+};
+
+export type TempoLookupTrack = {
+  id: string;
+  title: string;
+  artist?: string;
+  duration_s?: number | null;
+  /** BPM tag already on the song (used as is when > 0) */
+  library_bpm?: number | null;
+};
+
 function query(params: Record<string, string | number | null | undefined>): string {
   const parts = Object.entries(params)
     .filter(([, v]) => v !== undefined && v !== null)
@@ -316,4 +346,17 @@ export const api = {
   spotifySetVolume: (percent: number) =>
     request<void>("/spotify/volume", { method: "PUT", body: JSON.stringify({ percent: Math.round(percent) }) }),
   spotifyNext: () => request<void>("/spotify/next", { method: "POST" }),
+
+  /** Heart rate zones coach mode can aim for (from WHOOP, or estimated). */
+  coachZones: () => request<HrZones>("/coach/zones"),
+  /** Current heart rate and the tempo the music should aim for. Poll every 1-2s. */
+  coachTarget: (fallbackBpm?: number, zone?: number | null) =>
+    request<CoachTarget>(`/coach/target${query({ fallback_bpm: fallbackBpm, zone })}`),
+  /** Song tempos by title + artist, at most 50 songs per call. null = unknown. The first lookup
+   * of a song takes a moment (the backend asks Deezer + ReccoBeats); after that it's cached. */
+  tempoLookup: (tracks: TempoLookupTrack[]) =>
+    request<{ tempos: Record<string, TempoInfo | null> }>("/tempo/lookup", {
+      method: "POST",
+      body: JSON.stringify({ tracks }),
+    }),
 };

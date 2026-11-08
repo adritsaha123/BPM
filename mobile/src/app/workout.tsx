@@ -129,7 +129,7 @@ function Metric({ label, value, unit, color }: { label: string; value: string; u
   );
 }
 
-const SOURCE_NAME = { spotify: "Spotify", dj: "DJ" } as const;
+const SOURCE_NAME = { spotify: "Spotify", dj: "DJ", apple: "Apple Music" } as const;
 
 function MusicCard() {
   const bpm = useSession((s) => s.targetBpm);
@@ -152,7 +152,7 @@ function MusicCard() {
     }
   }
 
-  // Titles look like "Song — Artist · License" (DJ) or "Song — Artist · 164 BPM" (Spotify).
+  // Titles look like "Song — Artist · License" (DJ) or "Song — Artist · 164 BPM" (Spotify, Apple Music).
   const [song, rest] = (title ?? "—").split(" — ");
   const chip = source === "spotify" ? `${bpm} BPM` : `${rate.toFixed(2)}× · ${bpm} BPM`;
 

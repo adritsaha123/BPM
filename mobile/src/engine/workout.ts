@@ -27,11 +27,12 @@ import { summary } from "./summary";
 const TICK_MS = 1000;
 
 /** Spotify switches whole songs (bigger, slower steps); DJ stretches songs smoothly; both in running tempo. */
-const CONTROLS = { spotify: SPOTIFY_CONTROL, dj: DJ_CONTROL };
+// Apple Music re-rates songs like DJ mode does, so it uses the same small, quick tempo steps.
+const CONTROLS = { spotify: SPOTIFY_CONTROL, dj: DJ_CONTROL, apple: DJ_CONTROL };
 const control = () => CONTROLS[useSession.getState().musicSource];
 
 /** Steady HR → a different song at the same tempo. Spotify already changes songs at each song's end. */
-const ROTATE: Record<keyof typeof CONTROLS, RotateConfig | null> = { spotify: null, dj: DJ_ROTATE };
+const ROTATE: Record<keyof typeof CONTROLS, RotateConfig | null> = { spotify: null, dj: DJ_ROTATE, apple: DJ_ROTATE };
 const HR_HISTORY_MS = 90_000;
 
 let unsubscribe: (() => void) | null = null;
@@ -112,13 +113,15 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
 
   const bpm = initialBpm(useBio.getState().cadence, control());
   session.setTargetBpm(bpm, "start");
-  // Music never blocks the workout: Spotify falls back to DJ mode, and if DJ mode can't start
-  // either (backend unreachable), the run continues without music.
+  // Music never blocks the workout: Spotify / Apple Music fall back to DJ mode, and if DJ mode
+  // can't start either (backend unreachable), the run continues without music.
   try {
     await music.start(bpm);
   } catch (e) {
-    if (session.musicSource === "spotify") {
-      warnings.push(`Spotify couldn't start (${spotifyError(e)}). Using DJ mode instead.`);
+    if (session.musicSource !== "dj") {
+      const name = session.musicSource === "apple" ? "Apple Music" : "Spotify";
+      warnings.push(`${name} couldn't start (${spotifyError(e)}). Using DJ mode instead.`);
+      music.stop();
       session.setMusicSource("dj");
       try {
         await music.start(bpm);
