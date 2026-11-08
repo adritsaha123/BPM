@@ -33,8 +33,6 @@ export const music = {
     if (source() === "dj") djOutput.setIntensity(intensity);
   },
 
-  /** Pause the music; the workout and coach keep running, so resume() plays at the current target.
-   *  Spotify goes through the backend, so it can fail (e.g. Spotify closed): that throws. */
   /** Switch to a different song at the same tempo (the heart rate is holding steady).
    *  Spotify already changes songs at the end of each one, and a mid-song cut there is abrupt on
    *  iPhone, so it's left alone. Returns whether a switch started. */
@@ -45,6 +43,8 @@ export const music = {
     return false;
   },
 
+  /** Pause the music; the workout and coach keep running, so resume() plays at the current target.
+   *  Spotify goes through the backend, so it can fail (e.g. Spotify closed): that throws. */
   async pause() {
     if (source() === "spotify") await spotifyOutput.pause();
     else if (source() === "dj") djOutput.pause();

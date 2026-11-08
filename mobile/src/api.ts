@@ -3,15 +3,21 @@ import { Platform } from "react-native";
 
 import { getUserId } from "./userId";
 
+/** The hosted backend (Render, docs/DEPLOY.md). Not a secret: it's the public API address. */
+export const CLOUD_API_URL = "https://bpm-backend-bx41.onrender.com";
+
 /**
  * Where is the backend?
- * 1. EXPO_PUBLIC_API_URL in mobile/.env wins (use this for ngrok or a deployed URL).
- * 2. Otherwise, in dev we reuse the IP of the laptop running Expo, so a real
- *    phone on the same Wi-Fi reaches FastAPI on port 8000 automatically.
+ * 1. EXPO_PUBLIC_API_URL in mobile/.env wins (use this for ngrok or another deployment).
+ * 2. Installed builds (Release, no dev server): the hosted backend, so a phone build works
+ *    on any network even if it was built without mobile/.env.
+ * 3. Dev without .env: the IP of the laptop running Expo, so a phone on the same Wi-Fi reaches
+ *    FastAPI on port 8000 automatically.
  */
 function resolveApiUrl(): string {
   const fromEnv = process.env.EXPO_PUBLIC_API_URL;
   if (fromEnv) return fromEnv.replace(/\/$/, "");
+  if (!__DEV__) return CLOUD_API_URL;
 
   const host = Constants.expoConfig?.hostUri?.split(":")[0];
   if (host) return `http://${host}:8000`;

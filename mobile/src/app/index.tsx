@@ -2,7 +2,7 @@ import { Link, router } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
-import { api, type SpotifyMode, type WhoopMode, type WhoopSummary } from "../api";
+import { api, API_URL, type SpotifyMode, type WhoopMode, type WhoopSummary } from "../api";
 import { Button, Card, Segmented, Stepper } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { startWorkout } from "../engine/workout";
@@ -40,7 +40,7 @@ const WHOOP_MODE_TEXT: Record<WhoopMode | "offline" | "loading", string> = {
   live: "Connected: zones and history come from your Whoop",
   not_connected: "Not connected. Connect to use your own HR zones.",
   mock: "Sample data (no Whoop keys on the backend)",
-  offline: "Can't reach the backend",
+  offline: `Can't reach the backend at ${API_URL}`,
 };
 
 const SPOTIFY_MODE_TEXT: Record<SpotifyMode | "offline" | "loading", string> = {
@@ -48,7 +48,7 @@ const SPOTIFY_MODE_TEXT: Record<SpotifyMode | "offline" | "loading", string> = {
   live: "Spotify is connected.",
   mock: "Using the demo music library (no Spotify keys on the backend).",
   not_connected: "Spotify isn't connected yet.",
-  offline: "Can't reach the backend.",
+  offline: `Can't reach the backend at ${API_URL}. It may be waking up (~1 min): tap Retry.`,
 };
 
 const SOURCE_OPTIONS: { value: HrSource; label: string }[] = [
