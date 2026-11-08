@@ -117,7 +117,7 @@ export const spotifyOutput = {
     lastSwitchAt = 0;
     await playBestNow();
     // Spotify can accept the command and still not play (e.g. iOS suspended it in the background).
-    // Check, so the workout can fall back to built-in tracks instead of running in silence.
+    // Check, so the workout can fall back to DJ mode instead of running in silence.
     await new Promise((r) => setTimeout(r, START_CHECK_MS));
     const np = await api.nowPlaying().catch(() => null);
     if (!np?.is_playing) {

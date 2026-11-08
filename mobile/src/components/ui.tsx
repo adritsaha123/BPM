@@ -1,38 +1,71 @@
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type ViewStyle } from "react-native";
 
-import { colors, spacing } from "../theme";
+import { colors, radius, spacing } from "../theme";
 
-export function Card({ title, children, style }: { title?: string; children: ReactNode; style?: ViewStyle }) {
+export function Card({ title, right, children, style }: { title?: string; right?: ReactNode; children: ReactNode; style?: ViewStyle }) {
   return (
     <View style={[styles.card, style]}>
-      {title && <Text style={styles.cardTitle}>{title}</Text>}
+      {(title || right) && (
+        <View style={styles.cardHead}>
+          {title ? <Eyebrow>{title}</Eyebrow> : <View />}
+          {right}
+        </View>
+      )}
       {children}
     </View>
   );
 }
 
+/** Small uppercase section label. */
+export function Eyebrow({ children, color = colors.muted }: { children: ReactNode; color?: string }) {
+  return <Text style={[styles.eyebrow, { color }]}>{children}</Text>;
+}
+
 export function Button({
   label,
   onPress,
+  onLongPress,
   variant = "primary",
   disabled,
+  busy,
 }: {
   label: string;
-  onPress: () => void;
+  onPress?: () => void;
+  onLongPress?: () => void;
   variant?: "primary" | "secondary" | "danger";
   disabled?: boolean;
+  busy?: boolean;
 }) {
-  const bg = variant === "primary" ? colors.primary : variant === "danger" ? colors.error : colors.border;
+  const v = VARIANTS[variant];
   return (
     <Pressable
       accessibilityRole="button"
       disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.button, { backgroundColor: bg, opacity: disabled ? 0.4 : pressed ? 0.8 : 1 }]}
+      onLongPress={onLongPress}
+      delayLongPress={700}
+      style={({ pressed }) => [styles.button, { backgroundColor: v.bg, opacity: disabled ? 0.4 : pressed ? 0.8 : 1 }]}
     >
-      <Text style={[styles.buttonText, variant === "secondary" && { color: colors.text }]}>{label}</Text>
+      {busy && <ActivityIndicator color={v.fg} />}
+      <Text style={[styles.buttonText, { color: v.fg }]}>{label}</Text>
     </Pressable>
+  );
+}
+
+const VARIANTS = {
+  primary: { bg: colors.primary, fg: colors.onPrimary },
+  secondary: { bg: colors.surface2, fg: colors.text },
+  danger: { bg: "rgba(255,77,94,0.14)", fg: colors.error },
+};
+
+/** Rounded status chip: a colored dot + short text. */
+export function Pill({ label, dot, color, bg }: { label: string; dot?: string; color?: string; bg?: string }) {
+  return (
+    <View style={[styles.pill, bg ? { backgroundColor: bg } : null]}>
+      {dot && <View style={[styles.dot, { backgroundColor: dot }]} />}
+      <Text style={[styles.pillText, color ? { color } : null]}>{label}</Text>
+    </View>
   );
 }
 
@@ -77,41 +110,68 @@ export function Stepper({
 }) {
   return (
     <View style={styles.stepper}>
-      <Text style={styles.stepperLabel}>{label}</Text>
-      <View style={styles.stepperRow}>
-        <Pressable accessibilityLabel={`Decrease ${label}`} style={styles.stepperBtn} onPress={() => onChange(value - step)}>
-          <Text style={styles.stepperBtnText}>−</Text>
-        </Pressable>
+      <Pressable accessibilityLabel={`Decrease ${label}`} style={styles.stepperBtn} onPress={() => onChange(value - step)}>
+        <Text style={styles.stepperBtnText}>−</Text>
+      </Pressable>
+      <View style={styles.stepperMid}>
         <Text style={styles.stepperValue}>{display ?? value}</Text>
-        <Pressable accessibilityLabel={`Increase ${label}`} style={styles.stepperBtn} onPress={() => onChange(value + step)}>
-          <Text style={styles.stepperBtnText}>+</Text>
-        </Pressable>
+        <Text style={styles.stepperLabel}>{label}</Text>
       </View>
+      <Pressable accessibilityLabel={`Increase ${label}`} style={styles.stepperBtn} onPress={() => onChange(value + step)}>
+        <Text style={styles.stepperBtnText}>+</Text>
+      </Pressable>
     </View>
   );
 }
 
+export const text = StyleSheet.create({
+  h1: { fontSize: 32, fontWeight: "800", letterSpacing: -0.8, color: colors.text },
+  body: { fontSize: 15, color: colors.text },
+  help: { fontSize: 13, color: colors.muted, lineHeight: 19 },
+  error: { fontSize: 13, color: colors.error, lineHeight: 19 },
+  num: { fontVariant: ["tabular-nums"] },
+});
+
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.card, borderRadius: 16, padding: spacing.lg, gap: spacing.md },
-  cardTitle: { fontSize: 13, fontWeight: "600", color: colors.muted, textTransform: "uppercase", letterSpacing: 0.5 },
-  button: { borderRadius: 12, paddingVertical: spacing.md + 2, alignItems: "center" },
-  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  segmented: { flexDirection: "row", backgroundColor: colors.bg, borderRadius: 10, padding: 3 },
-  segment: { flex: 1, paddingVertical: spacing.sm, alignItems: "center", borderRadius: 8 },
-  segmentActive: { backgroundColor: colors.card, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 4 },
-  segmentText: { fontSize: 14, color: colors.muted, fontWeight: "500" },
-  segmentTextActive: { color: colors.text, fontWeight: "600" },
-  stepper: { flex: 1, gap: spacing.xs },
-  stepperLabel: { fontSize: 13, color: colors.muted },
-  stepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: 18, gap: 14 },
+  cardHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  eyebrow: { fontSize: 12, fontWeight: "700", letterSpacing: 1.2, textTransform: "uppercase" },
+  button: {
+    height: 56,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
+  buttonText: { fontSize: 17, fontWeight: "700" },
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.surface2,
+  },
+  pillText: { fontSize: 13, fontWeight: "600", color: colors.text },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  segmented: { flexDirection: "row", backgroundColor: colors.surface2, borderRadius: radius.sm, padding: 3 },
+  segment: { flex: 1, paddingVertical: spacing.sm, alignItems: "center", borderRadius: 9 },
+  segmentActive: { backgroundColor: colors.border },
+  segmentText: { fontSize: 14, color: colors.muted, fontWeight: "600" },
+  segmentTextActive: { color: colors.text },
+  stepper: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  stepperMid: { alignItems: "center" },
   stepperBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.bg,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surface2,
     alignItems: "center",
     justifyContent: "center",
   },
-  stepperBtnText: { fontSize: 22, color: colors.text },
-  stepperValue: { fontSize: 22, fontWeight: "700", color: colors.text, fontVariant: ["tabular-nums"] },
+  stepperBtnText: { fontSize: 20, color: colors.text, fontWeight: "500" },
+  stepperValue: { fontSize: 28, fontWeight: "800", letterSpacing: -0.8, color: colors.text, fontVariant: ["tabular-nums"] },
+  stepperLabel: { fontSize: 12, color: colors.muted },
 });

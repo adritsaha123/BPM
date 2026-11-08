@@ -410,9 +410,9 @@ function Button(props: { label: string; onPress: () => void; busy?: boolean; pri
       ]}
     >
       {props.busy ? (
-        <ActivityIndicator color={props.primary ? "#fff" : colors.primary} />
+        <ActivityIndicator color={props.primary ? colors.onPrimary : colors.primary} />
       ) : (
-        <Text style={[styles.buttonText, props.primary && { color: "#fff" }]}>{props.label}</Text>
+        <Text style={[styles.buttonText, props.primary && { color: colors.onPrimary }]}>{props.label}</Text>
       )}
     </Pressable>
   );
@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
   bpmLabel: { fontSize: 13, fontWeight: "600", color: colors.muted, textTransform: "uppercase" },
   bpmValue: { fontSize: 56, fontWeight: "700", color: colors.text, fontVariant: ["tabular-nums"] },
   pill: { alignSelf: "center", borderRadius: 999, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
-  pillText: { color: "#fff", fontWeight: "600" },
+  pillText: { color: colors.onPrimary, fontWeight: "600" },
   stepper: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
   stepBtn: {
     width: 36,
@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { color: colors.text, fontSize: 14 },
-  chipTextActive: { color: "#fff", fontWeight: "600" },
+  chipTextActive: { color: colors.onPrimary, fontWeight: "600" },
   matchRow: {
     flexDirection: "row",
     alignItems: "center",

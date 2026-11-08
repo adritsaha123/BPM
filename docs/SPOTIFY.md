@@ -34,7 +34,7 @@ songs from 72 to 182 BPM that advance in real time), so the screen works without
 
 ## Spotify in workouts
 
-On the setup screen, **Music → Spotify** makes the workout loop play Spotify instead of the built-in tracks.
+On the setup screen, **Music → Spotify** makes the workout loop play Spotify instead of DJ mode.
 The phone's controller (`mobile/src/engine/controller.ts`) still decides the target BPM from your zone
 (cadence-based; for Spotify `SPOTIFY_CONTROL`: 8 BPM steps, at most one a minute, 150–185, because
 tempo only changes when the song does); `mobile/src/audio/spotifyOutput.ts` turns that into songs:
@@ -51,8 +51,8 @@ tempo only changes when the song does); `mobile/src/audio/spotifyOutput.ts` turn
   Tempo still leads: energy only breaks near-ties, and a song that goes the wrong way (slower while
   pushing, faster while easing off) is penalized (`tempo.fit_score`). `/spotify/match` and `/spotify/sync`
   take `intensity=push|hold|ease` (default: the coach direction when `zone` is set).
-- If Spotify can't play (no active device, no Premium, backend down), the workout falls back to the built-in
-  tracks and says why.
+- If Spotify can't play (no active device, no Premium, backend down), the workout falls back to DJ mode
+  and says why (and runs without music if DJ mode can't start either).
 
 The Spotify screen's own coach mode (steps from the current song, `tempo.coach_target`) is separate and still works on its own.
 

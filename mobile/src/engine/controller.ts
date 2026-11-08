@@ -9,22 +9,13 @@ import type { Zone, ZoneMode } from "../store/session";
 
 export type Control = { minBpm: number; maxBpm: number; step: number; cooldownMs: number; deadband: number };
 
-/** Built-in tracks: time-stretched, so small frequent nudges are smooth. */
-export const CONTROL: Control = {
-  minBpm: 120,
-  maxBpm: 190,
-  step: 4, // bpm per adjustment
-  cooldownMs: 20_000, // wait for HR to respond before nudging again
-  deadband: 2, // ignore readings this close to the zone edge (bpm or sec/km)
-};
-
-/** DJ mode: songs are time-stretched like the built-in tracks (smooth), kept in running tempo. */
+/** DJ mode: songs are time-stretched, so small frequent nudges are smooth; kept in running tempo. */
 export const DJ_CONTROL: Control = {
   minBpm: 145,
   maxBpm: 185,
-  step: 4,
-  cooldownMs: 20_000,
-  deadband: 2,
+  step: 4, // bpm per adjustment
+  cooldownMs: 20_000, // wait for HR to respond before nudging again
+  deadband: 2, // ignore readings this close to the zone edge (bpm or sec/km)
 };
 
 /**
@@ -55,7 +46,7 @@ export type ControlDecision = { bpm: number; reason: string } | null;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 /** -1 = above zone (slow down), +1 = below zone (speed up), 0 = in zone, null = no data */
-export function zoneError(input: ControlInput, control: Control = CONTROL): -1 | 0 | 1 | null {
+export function zoneError(input: ControlInput, control: Control = DJ_CONTROL): -1 | 0 | 1 | null {
   const { mode, zone } = input;
   const deadband = control.deadband;
   if (mode === "hr") {
@@ -71,7 +62,7 @@ export function zoneError(input: ControlInput, control: Control = CONTROL): -1 |
   return 0;
 }
 
-export function decide(input: ControlInput, control: Control = CONTROL): ControlDecision {
+export function decide(input: ControlInput, control: Control = DJ_CONTROL): ControlDecision {
   if (input.now - input.lastChangeAt < control.cooldownMs) return null;
   const err = zoneError(input, control);
   if (!err) return null;
@@ -84,7 +75,7 @@ export function decide(input: ControlInput, control: Control = CONTROL): Control
 // ---- Song rotation while the heart rate holds steady ----
 //
 // The BPM loop above only changes tempo when HR leaves the zone, so a runner who settles in hears
-// the same song (built-in tracks loop forever). When HR stays steady we switch to a different song
+// the same song for its whole length. When HR stays steady we switch to a different song
 // at the same tempo: variety without changing the beat the runner is locked to.
 
 export type RotateConfig = {
@@ -96,8 +87,6 @@ export type RotateConfig = {
   minSongMs: number;
 };
 
-/** Built-in tracks are short loops: rotate fairly often. */
-export const BUILTIN_ROTATE: RotateConfig = { steadyWindowMs: 60_000, steadySpreadBpm: 6, minSongMs: 75_000 };
 /** DJ songs are full songs that already change at the end: only cut long ones short. */
 export const DJ_ROTATE: RotateConfig = { steadyWindowMs: 60_000, steadySpreadBpm: 6, minSongMs: 150_000 };
 
@@ -128,7 +117,7 @@ export function shouldRotate(input: RotateInput, config: RotateConfig): boolean 
 }
 
 /** Starting BPM: match the runner's current cadence if we have it. */
-export function initialBpm(cadence: number | null, control: Control = CONTROL): number {
+export function initialBpm(cadence: number | null, control: Control = DJ_CONTROL): number {
   return clamp(cadence && cadence > 100 ? Math.round(cadence) : 160, control.minBpm, control.maxBpm);
 }
 

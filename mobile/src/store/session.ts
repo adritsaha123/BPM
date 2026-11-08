@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import type { WorkoutSummary } from "../engine/summary";
 import { isExpoGo } from "../runtime";
 
 export type ZoneMode = "hr" | "pace";
@@ -15,8 +16,8 @@ export type Zone = { min: number; max: number };
  */
 export type HrSource = "laptop" | "phone" | "sim";
 
-/** Where the music comes from: bundled tracks (smooth tempo shifts) or Spotify (real songs by tempo). */
-export type MusicSource = "builtin" | "spotify" | "dj";
+/** Where the music comes from: DJ mode (open-license songs at the exact BPM) or Spotify (songs picked by tempo). */
+export type MusicSource = "spotify" | "dj";
 
 export type Adjustment = { at: number; from: number; to: number; reason: string };
 
@@ -37,6 +38,8 @@ type SessionState = {
   playbackRate: number;
   musicPaused: boolean;
   adjustments: Adjustment[];
+  /** Stats of the last finished workout (summary screen). */
+  lastSummary: WorkoutSummary | null;
 
   setMode: (m: ZoneMode) => void;
   setZone: (mode: ZoneMode, zone: Zone) => void;
@@ -47,6 +50,7 @@ type SessionState = {
   setTargetBpm: (bpm: number, reason: string) => void;
   setNowPlaying: (title: string, rate: number) => void;
   setMusicPaused: (paused: boolean) => void;
+  setLastSummary: (summary: WorkoutSummary | null) => void;
 };
 
 export const useSession = create<SessionState>()((set, get) => ({
@@ -56,7 +60,7 @@ export const useSession = create<SessionState>()((set, get) => ({
   paceZone: { min: 300, max: 360 }, // 5:00–6:00 /km
   hrSource: isExpoGo ? "laptop" : "phone",
   simMotion: false,
-  musicSource: "builtin",
+  musicSource: "dj",
   startedAt: null,
 
   targetBpm: 160,
@@ -64,6 +68,7 @@ export const useSession = create<SessionState>()((set, get) => ({
   playbackRate: 1,
   musicPaused: false,
   adjustments: [],
+  lastSummary: null,
 
   setMode: (mode) => set({ mode }),
   setZone: (mode, zone) => set(mode === "hr" ? { hrZone: zone } : { paceZone: zone }),
@@ -89,4 +94,5 @@ export const useSession = create<SessionState>()((set, get) => ({
   },
   setNowPlaying: (trackTitle, playbackRate) => set({ trackTitle, playbackRate }),
   setMusicPaused: (musicPaused) => set({ musicPaused }),
+  setLastSummary: (lastSummary) => set({ lastSummary }),
 }));

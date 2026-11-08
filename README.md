@@ -1,6 +1,6 @@
 # BPM Coach
 
-An iOS running coach that changes the music's tempo to keep your heart rate in a training zone. Live heart rate comes from a Whoop band; music is built-in tracks (exact tempo) or Spotify (songs picked by tempo and energy).
+An iOS running coach that changes the music's tempo to keep your heart rate in a training zone. Live heart rate comes from a Whoop band; music is DJ mode (open-license songs locked to the exact tempo, `docs/DJ.md`) or Spotify (songs picked by tempo and energy).
 
 | Part | Tech | Folder |
 |---|---|---|
@@ -52,7 +52,7 @@ Options: `-NoWhoop` / `--no-whoop` skips the band (use **Simulated** HR in the a
 2. Heart rate source: **Laptop relay**. The status turns **Live** with your bpm.
 3. Target zone: **Heart rate**, then tap a **Whoop zone** chip (Z2 or Z3 for running).
 4. Leave **Simulated running** off if you're actually moving; turn it on to test at a desk.
-5. Music: **Built-in tracks** (smooth speed changes) or **Spotify** (real songs at the target tempo; open Spotify on the phone and play any song first. Setup: `docs/SPOTIFY.md`).
+5. Music: **DJ** (songs locked to the exact BPM and blended like a DJ; needs the backend) or **Spotify** (real songs at the target tempo; open Spotify on the phone and play any song first. Setup: `docs/SPOTIFY.md`).
 6. **Start workout.** If HR is out of zone, after about 20 seconds you'll see something like `160 → 164 BPM` and hear the beat change.
 
 **If something's wrong:**
@@ -163,13 +163,13 @@ On the iOS Simulator (no Bluetooth or GPS), turn on **Simulated heart rate** and
 | Folder | What's there |
 |---|---|
 | `runtime.ts` | `isExpoGo` flag: switches Bluetooth and background GPS off in Expo Go |
-| `app/` | Expo Router screens: `index` (setup), `workout` (live), `music` (Spotify screen) |
+| `app/` | Expo Router screens: `index` (setup), `workout` (live), `summary` (after a run), `music` (Spotify screen) |
 | `sources/` | `relayHr` (live HR via the laptop relay), `whoopBle` (live HR over phone Bluetooth, dev build), `pedometer` (cadence), `location` (pace + background), `mock` (simulated HR and/or running) |
-| `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop) |
-| `audio/` | `music.ts` (picks the music source), `player.ts` (built-in tracks: time-stretch + crossfade), `tracks.ts` (track catalog with BPMs), `spotifyOutput.ts` (Spotify: songs picked by tempo) |
+| `engine/` | `controller.ts` (pure BPM rules), `workout.ts` (start/stop + the sensor → BPM loop), `summary.ts` (run stats) |
+| `audio/` | `music.ts` (picks the music source), `djOutput.ts` (DJ mode: time-stretch + crossfade), `spotifyOutput.ts` (Spotify: songs picked by tempo), `session.ts` (audio session) |
 | `store/` | Zustand stores: `bio` (live biometrics), `session` (zone, target BPM, log) |
 
-Demo drum loops live in `assets/music` (`npm run gen:tracks` regenerates them). To add real songs, drop the files in that folder and add them to `audio/tracks.ts` with their BPM.
+DJ mode's songs come from the backend catalog (`backend/app/data/dj_catalog.json`, built by `backend/scripts/build_dj_catalog.py`; see `docs/DJ.md`).
 
 ### Phone can't connect? (common on hackathon Wi-Fi)
 
@@ -242,7 +242,7 @@ When you add an endpoint in `backend/app/routes/`, add a typed function for it i
 - **WHOOP history + live heart rate:** `backend/app/whoop.py`, `routes/whoop.py`, `routes/live.py`. Setup in `docs/WHOOP.md`
 - **New endpoint:** add a router in `backend/app/routes/` (see `live.py` for a small one)
 - **New screen:** add a file to `mobile/src/app/` (Expo Router)
-- **BPM rules (step size, cooldown, limits):** `CONTROL` in `mobile/src/engine/controller.ts`
+- **BPM rules (step size, cooldown, limits):** `DJ_CONTROL` / `SPOTIFY_CONTROL` in `mobile/src/engine/controller.ts`
 - **Colors and spacing:** `mobile/src/theme.ts`
 
 ## Deploying for the demo (optional)
