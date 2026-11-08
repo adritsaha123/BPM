@@ -1,14 +1,16 @@
 import { useKeepAwake } from "expo-keep-awake";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { music } from "../audio/music";
+import { RouteMap } from "../components/RouteMap";
 import { Button, Card, Pill, text } from "../components/ui";
 import { formatPace } from "../engine/controller";
 import { stopWorkout } from "../engine/workout";
-import { isHrFresh, useBio } from "../store/bio";
+import { summarize, useRoute } from "../sources/route";
+import { isHrFresh, isPaceFresh, useBio } from "../store/bio";
 import { useSession, type Zone } from "../store/session";
 import { colors, radius, spacing, zoneColor } from "../theme";
 
@@ -37,6 +39,7 @@ export default function WorkoutScreen() {
         <TopBar />
         <Hero />
         <Metrics />
+        <LiveRoute />
         <MusicCard />
         <LastAdjustment />
         <EndButton />
@@ -49,7 +52,7 @@ function useZoneState() {
   const mode = useSession((s) => s.mode);
   const zone = useSession((s) => (s.mode === "hr" ? s.hrZone : s.paceZone));
   const hr = useBio((s) => (isHrFresh(s) ? s.hr : null));
-  const pace = useBio((s) => s.paceSecPerKm);
+  const pace = useBio((s) => (isPaceFresh(s) ? s.paceSecPerKm : null));
   const value = mode === "hr" ? hr : pace;
   return { mode, zone, value, err: where(value, zone, mode === "pace") };
 }
@@ -207,6 +210,22 @@ function LastAdjustment() {
 }
 
 /** Hold (not tap) to end, so a sweaty tap mid-run doesn't stop the workout. */
+/** The route so far on a map, with the GPS distance. Hidden with simulated running (no GPS). */
+function LiveRoute() {
+  const live = useRoute((s) => s.live);
+  const simMotion = useSession((s) => s.simMotion);
+  const km = useMemo(
+    () => (live.length > 1 ? summarize({ id: "", started_at: 0, ended_at: 0, points: live }).distance_km : 0),
+    [live],
+  );
+  if (simMotion) return null;
+  return (
+    <Card title="Route" right={<Text style={[text.help, text.num]}>{`${km.toFixed(2)} km`}</Text>}>
+      <RouteMap points={live} live style={{ height: 200 }} />
+    </Card>
+  );
+}
+
 function EndButton() {
   const [hint, setHint] = useState(false);
   return (

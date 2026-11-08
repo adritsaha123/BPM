@@ -2,8 +2,10 @@ import { router } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { RouteMap } from "../components/RouteMap";
 import { Button, Card, Eyebrow, text } from "../components/ui";
 import type { WorkoutSummary } from "../engine/summary";
+import { useRoute } from "../sources/route";
 import { useSession } from "../store/session";
 import { colors, radius, spacing, zoneColor } from "../theme";
 
@@ -22,13 +24,31 @@ export default function SummaryScreen() {
           <Text style={text.h1}>{s && s.durationMs > 60_000 ? "Nice run." : "Workout saved."}</Text>
         </View>
 
+        {s?.runId && <Route id={s.runId} />}
+
         {s ? <Body s={s} paceMode={mode === "pace"} /> : <Text style={text.help}>No workout data was recorded.</Text>}
 
-        <View style={{ marginTop: spacing.sm }}>
+        <View style={{ marginTop: spacing.sm, gap: spacing.sm }}>
           <Button label="Done" onPress={done} />
+          <Button label="Past runs" variant="secondary" onPress={() => router.replace("/runs")} />
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/** The GPS route of this run, and whether it's saved to the backend yet. */
+function Route({ id }: { id: string }) {
+  const run = useRoute((st) => st.local.find((r) => r.id === id) ?? null);
+  const upload = useRoute((st) => st.upload[id]);
+  if (!run) return null;
+  return (
+    <Card
+      title="Route"
+      right={<Text style={text.help}>{upload === "saved" ? "Saved" : upload === "waiting" ? "Not uploaded yet" : "Saving…"}</Text>}
+    >
+      <RouteMap points={run.points} style={{ height: 240 }} />
+    </Card>
   );
 }
 

@@ -28,6 +28,8 @@ export default function RootLayout() {
         <Stack.Screen name="summary" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="music" options={{ title: "Spotify" }} />
         <Stack.Screen name="apple-music" options={{ title: "Apple Music" }} />
+        <Stack.Screen name="run" options={{ title: "Run" }} />
+        <Stack.Screen name="runs" options={{ title: "Past runs" }} />
       </Stack>
       {booting && <Splash onDone={onBooted} />}
       <StatusBar style="light" />

@@ -424,6 +424,7 @@ export default function SetupScreen() {
         ))}
 
         <Button label={starting ? "Starting…" : "▶  Start workout"} onPress={onStart} disabled={!canStart || starting} busy={starting} />
+        <Button label="Past runs" variant="secondary" onPress={() => router.push("/runs")} />
         {!canStart && (
           <Text style={[text.help, { textAlign: "center" }]}>Waiting for live heart rate, or pick Simulated to start now.</Text>
         )}

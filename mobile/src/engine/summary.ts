@@ -21,6 +21,8 @@ export type WorkoutSummary = {
   tempoChanges: number;
   /** ~1 point per 10 s, for the heart-rate chart. */
   hrSeries: HrPoint[];
+  /** GPS route recorded during the run (sources/route.ts), if any */
+  runId?: string | null;
 };
 
 const SERIES_EVERY_MS = 10_000;

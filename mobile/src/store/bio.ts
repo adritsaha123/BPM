@@ -22,10 +22,11 @@ type BioState = {
   // Pace (iPhone GPS)
   speed: number | null; // m/s, smoothed
   paceSecPerKm: number | null;
+  speedAt: number; // ms timestamp of the last speed reading
 
   pushHr: (bpm: number, at?: number) => void;
   pushCadence: (spm: number) => void;
-  pushSpeed: (mps: number) => void;
+  pushSpeed: (mps: number, at?: number) => void;
   setHrStatus: (status: HrStatus, extra?: { device?: string | null; error?: string | null }) => void;
   reset: () => void;
 };
@@ -45,6 +46,7 @@ const initial = {
   cadence: null,
   speed: null,
   paceSecPerKm: null,
+  speedAt: 0,
 };
 
 export const useBio = create<BioState>()((set, get) => ({
@@ -60,10 +62,12 @@ export const useBio = create<BioState>()((set, get) => ({
 
   pushCadence: (spm) => set({ cadence: Math.round(ema(get().cadence, spm, 0.4)) }),
 
-  pushSpeed: (mps) => {
+  pushSpeed: (mps, at = Date.now()) => {
     if (mps < 0) return; // iOS reports -1 when speed is unknown
-    const speed = ema(get().speed, mps, 0.3);
-    set({ speed, paceSecPerKm: speed > 0.5 ? Math.round(1000 / speed) : null });
+    // After a gap (GPS lost), start fresh instead of blending with the old speed.
+    const prev = at - get().speedAt > PACE_STALE_MS ? null : get().speed;
+    const speed = ema(prev, mps, 0.3);
+    set({ speed, speedAt: at, paceSecPerKm: speed > 0.5 ? Math.round(1000 / speed) : null });
   },
 
   setHrStatus: (hrStatus, extra) =>
@@ -81,3 +85,7 @@ export const useBio = create<BioState>()((set, get) => ({
 
 export const HR_STALE_MS = 6_000;
 export const isHrFresh = (s: Pick<BioState, "hrAt">, now = Date.now()) => now - s.hrAt < HR_STALE_MS;
+
+/** No GPS speed for this long (tunnel, lost signal): the pace is unknown, not the last one. */
+export const PACE_STALE_MS = 10_000;
+export const isPaceFresh = (s: Pick<BioState, "speedAt">, now = Date.now()) => now - s.speedAt < PACE_STALE_MS;

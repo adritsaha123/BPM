@@ -2,7 +2,8 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 
 import { isExpoGo } from "../runtime";
-import { useBio } from "../store/bio";
+import { pace } from "../engine/pace";
+import { route } from "./route";
 
 /**
  * Pace from iPhone GPS, delivered through a background location task.
@@ -18,7 +19,8 @@ const TASK = "bpm-location";
 let foregroundSub: Location.LocationSubscription | null = null;
 
 const onLocation = (loc: Location.LocationObject) => {
-  if (loc.coords.speed != null) useBio.getState().pushSpeed(loc.coords.speed);
+  pace.add(loc); // GPS speed or track speed -> useBio pace (engine/pace.ts)
+  route.add(loc);
 };
 
 if (!isExpoGo) {

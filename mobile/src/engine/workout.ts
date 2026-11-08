@@ -3,8 +3,10 @@ import { location } from "../sources/location";
 import { mock } from "../sources/mock";
 import { pedometer } from "../sources/pedometer";
 import { relayHr } from "../sources/relayHr";
+import { route, summarize } from "../sources/route";
 import { whoopHr } from "../sources/whoopBle";
-import { isHrFresh, useBio } from "../store/bio";
+import { isHrFresh, isPaceFresh, useBio } from "../store/bio";
+import { pace } from "./pace";
 import { useSession } from "../store/session";
 import {
   DJ_CONTROL,
@@ -55,7 +57,7 @@ function tick() {
     zone: session.mode === "hr" ? session.hrZone : session.paceZone,
     hr: bio.hr,
     hrFresh: isHrFresh(bio, now),
-    paceSecPerKm: bio.paceSecPerKm,
+    paceSecPerKm: isPaceFresh(bio, now) ? bio.paceSecPerKm : null, // stale = unknown: hold the tempo
     currentBpm: session.targetBpm,
     lastChangeAt,
   };
@@ -71,7 +73,7 @@ function tick() {
   // Song energy follows where we are vs the zone (Spotify picks high-energy songs to push you up).
   const err = zoneError(input, control());
   if (err != null) music.setIntensity(err > 0 ? "push" : err < 0 ? "ease" : "hold");
-  summary.record(now, { hr: input.hrFresh ? bio.hr : null, zone: err, cadence: bio.cadence, speed: bio.speed });
+  summary.record(now, { hr: input.hrFresh ? bio.hr : null, zone: err, cadence: bio.cadence, speed: isPaceFresh(bio, now) ? bio.speed : null });
 
   const decision = decide(input, control());
   if (!decision) return maybeRotate(now);
@@ -106,7 +108,9 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
   // HR sources are non-blocking: the loop holds BPM steady until fresh HR arrives.
   if (session.hrSource === "laptop") relayHr.start();
   if (session.hrSource === "phone" && useBio.getState().hrStatus !== "connected") whoopHr.connect();
+  pace.reset();
   if (!session.simMotion) {
+    route.begin(); // record the GPS track for the route map (sources/route.ts)
     if (!(await pedometer.start())) warnings.push("Motion access denied or unavailable — no cadence.");
     if (!(await location.start())) warnings.push("Location denied — no pace.");
   }
@@ -152,7 +156,15 @@ export async function stopWorkout() {
   mock.stop();
   pedometer.stop();
   await location.stop();
-  useSession.getState().setLastSummary(summary.finish());
+  const run = route.finish(); // uploads in the background; retried later if offline
+  const result = summary.finish();
+  if (result && run) {
+    result.runId = run.id;
+    // The GPS track is a better distance than adding up speed × time.
+    const km = summarize(run).distance_km;
+    if (km > 0) result.distanceM = km * 1000;
+  }
+  useSession.getState().setLastSummary(result);
   useSession.getState().setRunning(false);
   // Whoop / laptop relay stay connected between workouts so the setup screen shows live status.
 }
