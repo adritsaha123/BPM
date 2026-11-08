@@ -326,9 +326,9 @@ def default_zones(monkeypatch):
     """WHOOP not connected: zones estimated from a 190 max HR. Zone 3 = 133-152, middle 142.5."""
 
     def not_connected(*a, **k):
-        raise spotify_routes.whoop.WhoopNotConnectedError("no whoop")
+        raise spotify_routes.coach.whoop.WhoopNotConnectedError("no whoop")
 
-    monkeypatch.setattr(spotify_routes.whoop, "summary", not_connected)
+    monkeypatch.setattr(spotify_routes.coach.whoop, "summary", not_connected)
 
 
 def test_coach_steps_from_the_current_song_in_running_tempo():
