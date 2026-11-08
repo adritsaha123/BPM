@@ -1,9 +1,11 @@
 import { useKeepAwake } from "expo-keep-awake";
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { RouteMap } from "../components/RouteMap";
 import { Button, Card } from "../components/ui";
+import { summarize, useRoute } from "../sources/route";
 import { music } from "../audio/music";
 import { formatPace } from "../engine/controller";
 import { stopWorkout } from "../engine/workout";
@@ -18,20 +20,29 @@ export default function WorkoutScreen() {
   const zone = useSession((s) => (s.mode === "hr" ? s.hrZone : s.paceZone));
   const running = useSession((s) => s.status === "running");
 
+  const stopping = useRef(false);
+
   useEffect(() => {
-    if (!running) {
+    if (!running && !stopping.current) {
       if (router.canGoBack()) router.back();
       else router.replace("/");
     }
   }, [running]);
 
   async function onStop() {
+    stopping.current = true;
+    const before = useRoute.getState().local[0];
     await stopWorkout();
+    const run = useRoute.getState().local[0];
+    // A route was recorded: show it. Otherwise (simulated running, no GPS) go back to setup.
+    if (run && run !== before) router.replace({ pathname: "/run", params: { id: run.id, fresh: "1" } });
+    else router.replace("/");
   }
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Elapsed />
+      <LiveRoute />
       <View style={styles.metrics}>
         <HrTile highlight={mode === "hr"} zoneMin={zone.min} zoneMax={zone.max} />
         <View style={styles.metricRow}>
@@ -142,6 +153,22 @@ function AdjustmentLog() {
   );
 }
 
+function LiveRoute() {
+  const live = useRoute((s) => s.live);
+  const simMotion = useSession((s) => s.simMotion);
+  const km = useMemo(
+    () => (live.length > 1 ? summarize({ id: "", started_at: 0, ended_at: 0, points: live }).distance_km : 0),
+    [live],
+  );
+  if (simMotion) return null; // simulated running: no GPS route
+  return (
+    <View>
+      <RouteMap points={live} live />
+      <Text style={styles.distance}>{km.toFixed(2)} km</Text>
+    </View>
+  );
+}
+
 function Elapsed() {
   const startedAt = useSession((s) => s.startedAt);
   const [now, setNow] = useState(Date.now());
@@ -158,6 +185,7 @@ function Elapsed() {
 const styles = StyleSheet.create({
   container: { padding: spacing.lg, gap: spacing.lg },
   elapsed: { fontSize: 20, fontWeight: "600", color: colors.muted, textAlign: "center", fontVariant: ["tabular-nums"] },
+  distance: { marginTop: spacing.sm, textAlign: "center", fontSize: 15, fontWeight: "600", color: colors.text },
   metrics: { gap: spacing.md },
   metricRow: { flexDirection: "row", gap: spacing.md },
   bigTile: { alignItems: "center", gap: 0 },

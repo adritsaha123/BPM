@@ -3,6 +3,7 @@ import { location } from "../sources/location";
 import { mock } from "../sources/mock";
 import { pedometer } from "../sources/pedometer";
 import { relayHr } from "../sources/relayHr";
+import { route } from "../sources/route";
 import { whoopHr } from "../sources/whoopBle";
 import { isHrFresh, useBio } from "../store/bio";
 import { useSession } from "../store/session";
@@ -105,6 +106,7 @@ export async function startWorkout(): Promise<{ warnings: string[] }> {
   if (session.hrSource === "laptop") relayHr.start();
   if (session.hrSource === "phone" && useBio.getState().hrStatus !== "connected") whoopHr.connect();
   if (!session.simMotion) {
+    route.begin(); // record the GPS track for a post-run route
     if (!(await pedometer.start())) warnings.push("Motion access denied or unavailable — no cadence.");
     if (!(await location.start())) warnings.push("Location denied — no pace.");
   }
@@ -139,6 +141,7 @@ export async function stopWorkout() {
   mock.stop();
   pedometer.stop();
   await location.stop();
+  route.finish(); // uploads in the background; retried later if offline
   useSession.getState().setRunning(false);
   // Whoop / laptop relay stay connected between workouts so the setup screen shows live status.
 }

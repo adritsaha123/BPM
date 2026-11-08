@@ -3,6 +3,7 @@ import * as TaskManager from "expo-task-manager";
 
 import { isExpoGo } from "../runtime";
 import { useBio } from "../store/bio";
+import { route } from "./route";
 
 /**
  * Pace from iPhone GPS, delivered through a background location task.
@@ -19,6 +20,7 @@ let foregroundSub: Location.LocationSubscription | null = null;
 
 const onLocation = (loc: Location.LocationObject) => {
   if (loc.coords.speed != null) useBio.getState().pushSpeed(loc.coords.speed);
+  route.add(loc);
 };
 
 if (!isExpoGo) {

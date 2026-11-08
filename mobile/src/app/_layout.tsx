@@ -18,6 +18,8 @@ export default function RootLayout() {
         <Stack.Screen name="index" options={{ title: "BPM Coach" }} />
         <Stack.Screen name="workout" options={{ title: "Workout", gestureEnabled: false, headerBackVisible: false }} />
         <Stack.Screen name="music" options={{ title: "Spotify" }} />
+        <Stack.Screen name="run" options={{ title: "Run" }} />
+        <Stack.Screen name="runs" options={{ title: "Past runs" }} />
       </Stack>
       <StatusBar style="dark" />
     </>

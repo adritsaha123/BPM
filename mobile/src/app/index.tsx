@@ -383,6 +383,7 @@ export default function SetupScreen() {
 
       <Button label={starting ? "Starting…" : "Start workout"} onPress={onStart} disabled={!canStart || starting} />
       {!canStart && <Text style={styles.help}>Waiting for live heart rate, or pick Simulated to start now.</Text>}
+      <Button label="Past runs" variant="secondary" onPress={() => router.push("/runs")} />
 
     </ScrollView>
   );
